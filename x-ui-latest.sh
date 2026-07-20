@@ -1003,7 +1003,20 @@ su -c "/usr/bin/sub2sing-box server --bind 127.0.0.1 --port 8080 & disown" root
 
 ######################install_fake_site#################################################################
 
-sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/mozaroc/x-ui-pro/refs/heads/master/randomfakehtml.sh)"
+FAKE_SITE_TMP=$(mktemp -d)
+if wget -qO "$FAKE_SITE_TMP/repo.tar.gz" "https://github.com/mozaroc/3x-ui-pro/archive/refs/heads/main.tar.gz" \
+	&& tar -xzf "$FAKE_SITE_TMP/repo.tar.gz" -C "$FAKE_SITE_TMP" --strip-components=3 "3x-ui-pro-main/assets/fake-sites"; then
+	FAKE_SITES=("$FAKE_SITE_TMP"/site-*/)
+	FAKE_SITE="${FAKE_SITES[$((RANDOM % ${#FAKE_SITES[@]}))]}"
+	msg_inf "Random fake site template: $(basename "$FAKE_SITE")"
+	mkdir -p /var/www/html
+	rm -rf /var/www/html/*
+	cp -a "$FAKE_SITE". /var/www/html/
+	msg_ok "Fake site installed successfully!"
+else
+	msg_err "Failed to download fake site templates!"
+fi
+rm -rf "$FAKE_SITE_TMP"
 
 ######################install_web_sub_page##############################################################
 
