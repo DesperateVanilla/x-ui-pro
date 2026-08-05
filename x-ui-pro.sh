@@ -534,6 +534,10 @@ if [[ -f $XUIDB ]]; then
              DELETE FROM "client_inbounds";
              DELETE FROM "client_traffics";
              DELETE FROM "settings";
+             DELETE FROM sqlite_sequence WHERE name='inbounds';
+             DELETE FROM sqlite_sequence WHERE name='clients';
+             DELETE FROM sqlite_sequence WHERE name='client_inbounds';
+             DELETE FROM sqlite_sequence WHERE name='client_traffics';
              UPDATE "nodes" SET "name" = '${node_name}', "remark" = '${node_name}' WHERE "id" = 1;
              INSERT INTO "settings" ("key", "value") VALUES ("subPort",  '${sub_port}');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subPath",  '/${sub_path}/');
@@ -581,7 +585,7 @@ if [[ -f $XUIDB ]]; then
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 4, '', 1756726925000);
-             INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
+             INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
              '1',
 	     '0',
              '0',
@@ -654,10 +658,9 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}',
-         '1'
+}'
 	     );
-      INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
+      INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
              '1',
 	     '0',
              '0',
@@ -701,10 +704,9 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}',
-         '1'
+}'
 	     );
-	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
+	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
 	     '1',
 	     '0',
          '0',
@@ -750,7 +752,7 @@ if [[ -f $XUIDB ]]; then
 }',
          '1'
 	);
-	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
+	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
 	     '1',
 	     '0',
          '0',
@@ -805,7 +807,7 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}','1'
+}'
 	);
 EOF
 /usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${panel_port}" -webBasePath "${panel_path}"

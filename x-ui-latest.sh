@@ -533,6 +533,10 @@ if [[ -f $XUIDB ]]; then
              DELETE FROM "client_inbounds";
              DELETE FROM "client_traffics";
              DELETE FROM "settings";
+             DELETE FROM sqlite_sequence WHERE name='inbounds';
+             DELETE FROM sqlite_sequence WHERE name='clients';
+             DELETE FROM sqlite_sequence WHERE name='client_inbounds';
+             DELETE FROM sqlite_sequence WHERE name='client_traffics';
              UPDATE "nodes" SET "name" = '${node_name}', "remark" = '${node_name}' WHERE "id" = 1;
              INSERT INTO "settings" ("key", "value") VALUES ("subPort",  '${sub_port}');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subPath",  '/${sub_path}/');
