@@ -797,7 +797,7 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}'
+}','1'
 	);
 EOF
 /usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${panel_port}" -webBasePath "${panel_path}"
