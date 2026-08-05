@@ -1041,6 +1041,7 @@ ufw allow 443/tcp
 ufw allow 443/udp
 ufw allow ${hy2_port}/udp
 ufw allow ${hy2_port}/tcp
+ufw allow ${panel_port}/tcp
 ufw --force enable  
 ##################################Show Details##########################################################
 
