@@ -34,7 +34,7 @@
 Запустите команду на чистом сервере под пользователем `root`:
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/mozaroc/x-ui-pro/master/x-ui-pro.sh) -install yes -panel 1 -ONLY_CF_IP_ALLOW no
+bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/x-ui-pro.sh) -install yes -panel 1 -ONLY_CF_IP_ALLOW no
 ```
 
 ### Параметры запуска:
@@ -53,7 +53,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/mozaroc/x-ui-pro/master/x-ui-
 Для полного удаления панели и Nginx:
 
 ```bash
-sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/mozaroc/x-ui-pro/master/x-ui-pro.sh) -uninstall yes"
+sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/x-ui-pro.sh) -uninstall yes"
 ```
 
 ---
@@ -61,7 +61,7 @@ sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/mozaroc/x-ui-pro/
 ## 💾 Резервное копирование
 
 ```bash
-sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/mozaroc/x-ui-pro/master/backup.sh)"
+sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/backup.sh)"
 ```
 
 ---

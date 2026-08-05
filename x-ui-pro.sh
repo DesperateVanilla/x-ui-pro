@@ -1054,13 +1054,13 @@ rm -rf "$FAKE_SITE_TMP"
 
 ######################install_web_sub_page##############################################################
 
-URL_SUB_PAGE=( "https://github.com/legiz-ru/x-ui-pro/raw/master/sub-3x-ui.html"
-		"https://github.com/legiz-ru/x-ui-pro/raw/master/sub-3x-ui-classical.html"
+URL_SUB_PAGE=( "https://github.com/DesperateVanilla/x-ui-pro/raw/master/sub-3x-ui.html"
+		"https://github.com/DesperateVanilla/x-ui-pro/raw/master/sub-3x-ui-classical.html"
 	)
-URL_CLASH_SUB=( "https://github.com/legiz-ru/x-ui-pro/raw/master/clash/clash.yaml"
-		"https://github.com/legiz-ru/x-ui-pro/raw/master/clash/clash_skrepysh.yaml"
-		"https://github.com/legiz-ru/x-ui-pro/raw/master/clash/clash_fullproxy_without_ru.yaml"
-  		"https://github.com/legiz-ru/x-ui-pro/raw/master/clash/clash_refilter_ech.yaml"
+URL_CLASH_SUB=( "https://github.com/DesperateVanilla/x-ui-pro/raw/master/clash/clash.yaml"
+		"https://github.com/DesperateVanilla/x-ui-pro/raw/master/clash/clash_skrepysh.yaml"
+		"https://github.com/DesperateVanilla/x-ui-pro/raw/master/clash/clash_fullproxy_without_ru.yaml"
+  		"https://github.com/DesperateVanilla/x-ui-pro/raw/master/clash/clash_refilter_ech.yaml"
 	)
 DEST_DIR_SUB_PAGE="/var/www/subpage"
 DEST_FILE_SUB_PAGE="$DEST_DIR_SUB_PAGE/index.html"
