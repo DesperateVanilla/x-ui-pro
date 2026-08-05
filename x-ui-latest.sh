@@ -595,6 +595,7 @@ if [[ -f $XUIDB ]]; then
              '8443',
 	     'vless',
              '{
+  "clients": [],
   "decryption": "none",
   "fallbacks": []
 }',
@@ -669,6 +670,7 @@ if [[ -f $XUIDB ]]; then
              '${ws_port}',
 	     'vless',
              '{
+  "clients": [],
   "decryption": "none",
   "fallbacks": []
 }','{
@@ -714,6 +716,7 @@ if [[ -f $XUIDB ]]; then
 		 '${trojan_port}',
 		 'trojan',
 		 '{
+  "clients": [],
   "fallbacks": []
 }',
 '{
@@ -758,6 +761,7 @@ if [[ -f $XUIDB ]]; then
 		 '${hy2_port}',
 		 'hysteria',
 		 '{
+  "clients": [],
   "ignoreClientBandwidth": false
 }',
 '{
