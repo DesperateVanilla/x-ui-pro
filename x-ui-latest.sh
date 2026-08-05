@@ -309,7 +309,7 @@ server {
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
-        proxy_pass https://127.0.0.1:${panel_port};
+        proxy_pass http://127.0.0.1:${panel_port};
 		break;
 	}
         location /${panel_path} {
@@ -326,7 +326,7 @@ server {
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
-        proxy_pass https://127.0.0.1:${panel_port};
+        proxy_pass http://127.0.0.1:${panel_port};
 		break;
 	}
 	include /etc/nginx/snippets/includes.conf;
@@ -365,7 +365,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;
                 proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_pass https://127.0.0.1:${sub_port};
+                proxy_pass http://127.0.0.1:${sub_port};
                 break;
         }
 	location /${sub_path}/ {
@@ -374,7 +374,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;
                 proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_pass https://127.0.0.1:${sub_port};
+                proxy_pass http://127.0.0.1:${sub_port};
                 break;
         }
 	location /assets/ {
@@ -383,7 +383,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;
                 proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_pass https://127.0.0.1:${sub_port};
+                proxy_pass http://127.0.0.1:${sub_port};
                 break;
         }
 	location /assets {
@@ -392,7 +392,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;
                 proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_pass https://127.0.0.1:${sub_port};
+                proxy_pass http://127.0.0.1:${sub_port};
                 break;
         }
 	#Subscription Path (json/fragment)
@@ -402,7 +402,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;
                 proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_pass https://127.0.0.1:${sub_port};
+                proxy_pass http://127.0.0.1:${sub_port};
                 break;
         }
 	location /${json_path}/ {
@@ -411,7 +411,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;
                 proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_pass https://127.0.0.1:${sub_port};
+                proxy_pass http://127.0.0.1:${sub_port};
                 break;
         }
 
