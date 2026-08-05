@@ -523,7 +523,13 @@ if [[ -f $XUIDB ]]; then
         public_key=$(echo "$output" | grep "^Password" | awk '{print $3}')
 
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
-        emoji_flag=$(LC_ALL=en_US.UTF-8 curl -s h       	sqlite3 $XUIDB <<EOF
+        emoji_flag=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/ | jq -r '.flag.emoji')
+       	sqlite3 $XUIDB <<EOF
+             DELETE FROM "inbounds";
+             DELETE FROM "clients";
+             DELETE FROM "client_inbounds";
+             DELETE FROM "client_traffics";
+             DELETE FROM "settings";
              INSERT INTO "settings" ("key", "value") VALUES ("subPort",  '${sub_port}');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subPath",  '/${sub_path}/');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subURI",  '${sub_uri}');

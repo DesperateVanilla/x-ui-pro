@@ -525,6 +525,11 @@ if [[ -f $XUIDB ]]; then
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
         emoji_flag=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/ | jq -r '.flag.emoji')
        	sqlite3 $XUIDB <<EOF
+             DELETE FROM "inbounds";
+             DELETE FROM "clients";
+             DELETE FROM "client_inbounds";
+             DELETE FROM "client_traffics";
+             DELETE FROM "settings";
              INSERT INTO "settings" ("key", "value") VALUES ("subPort",  '${sub_port}');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subPath",  '/${sub_path}/');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subURI",  '${sub_uri}');
@@ -566,15 +571,12 @@ if [[ -f $XUIDB ]]; then
              INSERT INTO "settings" ("key", "value") VALUES ("subJsonRules",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("datepicker",  'gregorian');
              INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('1','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('2','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
              INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 4, '', 1756726925000);
-             INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
+             INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
              '1',
 	     '0',
              '0',
@@ -646,9 +648,10 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}'
+}',
+         '1'
 	     );
-      INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
+      INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
              '1',
 	     '0',
              '0',
@@ -691,9 +694,10 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}'
+}',
+         '1'
 	     );
-	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
+	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
 	     '1',
 	     '0',
          '0',
@@ -735,9 +739,10 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}'
+}',
+         '1'
 	);
-	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
+	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing","node_id") VALUES ( 
 	     '1',
 	     '0',
          '0',
