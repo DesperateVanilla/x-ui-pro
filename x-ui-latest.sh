@@ -11,7 +11,7 @@ msg_inf		 ' /\    |_| _|_   |   | \ \_/ '	; echo
 ##################################Variables#############################################################
 XUIDB="/etc/x-ui/x-ui.db";domain="";UNINSTALL="x";INSTALL="n";PNLNUM=1;CFALLOW="n";CLASH=0;CUSTOMWEBSUB=0
 Pak=$(type apt &>/dev/null && echo "apt" || echo "yum")
-systemctl stop x-ui
+systemctl stop x-ui 2>/dev/null || true
 rm -rf /etc/systemd/system/x-ui.service
 rm -rf /usr/local/x-ui
 rm -rf /etc/x-ui
@@ -152,7 +152,7 @@ if [[ "${RealitySubDomain}.${RealityMainDomain}" != "${reality_domain}" ]] ; the
 fi
 
 ###############################Install Packages#########################################################
-ufw disable
+command -v ufw >/dev/null 2>&1 && ufw disable
 if [[ ${INSTALL} == *"y"* ]]; then
 
          version=$(grep -oP '(?<=VERSION_ID=")[0-9]+' /etc/os-release)
