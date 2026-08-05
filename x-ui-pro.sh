@@ -501,6 +501,7 @@ else
 fi
 
 if [[ $(nginx -t 2>&1 | grep -o 'successful') != "successful" ]]; then
+    nginx -t
     msg_err "nginx config is not ok!" && exit 1
 else
 	systemctl start nginx 
