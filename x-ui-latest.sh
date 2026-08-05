@@ -523,8 +523,7 @@ if [[ -f $XUIDB ]]; then
         public_key=$(echo "$output" | grep "^Password" | awk '{print $3}')
 
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
-        emoji_flag=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/ | jq -r '.flag.emoji')
-       	sqlite3 $XUIDB <<EOF
+        emoji_flag=$(LC_ALL=en_US.UTF-8 curl -s h       	sqlite3 $XUIDB <<EOF
              INSERT INTO "settings" ("key", "value") VALUES ("subPort",  '${sub_port}');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subPath",  '/${sub_path}/');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subURI",  '${sub_uri}');
@@ -569,6 +568,11 @@ if [[ -f $XUIDB ]]; then
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('2','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
+             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000);
+             INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
+             INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
+             INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);
+             INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 4, '', 1756726925000);
              INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
              '1',
 	     '0',
@@ -581,23 +585,6 @@ if [[ -f $XUIDB ]]; then
              '8443',
 	     'vless',
              '{
-	     "clients": [
-    {
-      "id": "${client_id}",
-      "flow": "xtls-rprx-vision",
-      "email": "first",
-      "limitIp": 0,
-      "totalGB": 0,
-      "expiryTime": 0,
-      "enable": true,
-      "tgId": "",
-      "subId": "first",
-      "reset": 0,
-      "created_at": 1756726925000,
-      "updated_at": 1756726925000
-
-    }
-  ],
   "decryption": "none",
   "fallbacks": []
 }',
@@ -672,23 +659,6 @@ if [[ -f $XUIDB ]]; then
              '${ws_port}',
 	     'vless',
              '{
-  "clients": [
-    {
-      "id": "${client_id}",
-      "flow": "",
-      "email": "first",
-      "limitIp": 0,
-      "totalGB": 0,
-      "expiryTime": 0,
-      "enable": true,
-      "tgId": "",
-      "subId": "first",
-      "reset": 0,
-      "created_at": 1756726925000,
-      "updated_at": 1756726925000
-
-    }
-  ],
   "decryption": "none",
   "fallbacks": []
 }','{
@@ -734,22 +704,6 @@ if [[ -f $XUIDB ]]; then
 		 '${trojan_port}',
 		 'trojan',
 		 '{
-  "clients": [
-    {
-      "comment": "",
-      "created_at": 1756726925000,
-      "email": "first",
-      "enable": true,
-      "expiryTime": 0,
-      "limitIp": 0,
-      "password": "${client_id}",
-      "reset": 0,
-      "subId": "first",
-      "tgId": 0,
-      "totalGB": 0,
-      "updated_at": 1756726925000
-    }
-  ],
   "fallbacks": []
 }',
 '{
@@ -794,19 +748,6 @@ if [[ -f $XUIDB ]]; then
 		 '${hy2_port}',
 		 'hysteria',
 		 '{
-  "clients": [
-    {
-      "auth": "${client_id}",
-      "email": "first",
-      "enable": true,
-      "expiryTime": 0,
-      "limitIp": 0,
-      "reset": 0,
-      "subId": "first",
-      "tgId": "",
-      "totalGB": 0
-    }
-  ],
   "ignoreClientBandwidth": false
 }',
 '{
