@@ -55,9 +55,9 @@ json_path=$(gen_random_string 10)
 panel_path=$(gen_random_string 10)
 ws_port=$(make_port)
 trojan_port=$(make_port)
+hy2_port=$(make_port)
 ws_path=$(gen_random_string 10)
 trojan_path=$(gen_random_string 10)
-xhttp_path=$(gen_random_string 10)
 config_username=$(gen_random_string 10)
 config_password=$(gen_random_string 10)
 AUTODOMAIN="n"
@@ -414,20 +414,7 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
                 proxy_pass https://127.0.0.1:${sub_port};
                 break;
         }
-        #XHTTP
-        location /${xhttp_path} {
-          grpc_pass grpc://unix:/dev/shm/uds2023.sock;
-          grpc_buffer_size         16k;
-          grpc_socket_keepalive    on;
-          grpc_read_timeout        1h;
-          grpc_send_timeout        1h;
-          grpc_set_header Connection         "";
-          grpc_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
-          grpc_set_header X-Forwarded-Proto  \$scheme;
-          grpc_set_header X-Forwarded-Port   \$server_port;
-          grpc_set_header Host               \$host;
-          grpc_set_header X-Forwarded-Host   \$host;
-          }
+
  	#Xray Config Path
 	location ~ ^/(?<fwdport>\d+)/(?<fwdpath>.*)\$ {
 		if (\$hack = 1) {return 404;}
@@ -536,9 +523,6 @@ if [[ -f $XUIDB ]]; then
         public_key=$(echo "$output" | grep "^Password" | awk '{print $3}')
 
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
-        client_id2=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
-        client_id3=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
-	trojan_pass=$(gen_random_string 10)
         emoji_flag=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/ | jq -r '.flag.emoji')
        	sqlite3 $XUIDB <<EOF
              INSERT INTO "settings" ("key", "value") VALUES ("subPort",  '${sub_port}');
@@ -553,7 +537,7 @@ if [[ -f $XUIDB ]]; then
 	     INSERT INTO "settings" ("key", "value") VALUES ("webDomain",  '');
              INSERT INTO "settings" ("key", "value") VALUES ("webCertFile",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("webKeyFile",  '');
-      	     INSERT INTO "settings" ("key", "value") VALUES ("sessionMaxAge",  '60');
+       	     INSERT INTO "settings" ("key", "value") VALUES ("sessionMaxAge",  '60');
              INSERT INTO "settings" ("key", "value") VALUES ("pageSize",  '50');
              INSERT INTO "settings" ("key", "value") VALUES ("expireDiff",  '0');
              INSERT INTO "settings" ("key", "value") VALUES ("trafficDiff",  '0');
@@ -582,9 +566,9 @@ if [[ -f $XUIDB ]]; then
              INSERT INTO "settings" ("key", "value") VALUES ("subJsonRules",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("datepicker",  'gregorian');
              INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('1','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('2','1','first_1','0','0','0','0','0');
-		   INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','firstX','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','firstT','0','0','0','0','0');
+	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('2','1','first','0','0','0','0','0');
+	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','first','0','0','0','0','0');
+	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
              INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
              '1',
 	     '0',
@@ -690,9 +674,9 @@ if [[ -f $XUIDB ]]; then
              '{
   "clients": [
     {
-      "id": "${client_id2}",
+      "id": "${client_id}",
       "flow": "",
-      "email": "first_1",
+      "email": "first",
       "limitIp": 0,
       "totalGB": 0,
       "expiryTime": 0,
@@ -738,89 +722,6 @@ if [[ -f $XUIDB ]]; then
   "routeOnly": false
 }'
 	     );
-      INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
-             '1',
-	     '0',
-             '0',
-	     '0',
-             '${emoji_flag} xhttp',
-	     '0',
-             '0',
-	     '/dev/shm/uds2023.sock,0666',
-             '0',
-	     'vless',
-             '{
-  "clients": [
-    {
-      "id": "${client_id3}",
-      "flow": "",
-      "email": "firstX",
-      "limitIp": 0,
-      "totalGB": 0,
-      "expiryTime": 0,
-      "enable": true,
-      "tgId": "",
-      "subId": "first",
-      "reset": 0,
-	  "created_at": 1756726925000,
-      "updated_at": 1756726925000
-    }
-  ],
-  "decryption": "none",
-  "fallbacks": []
-}','{
-  "network": "xhttp",
-  "security": "none",
-  "externalProxy": [
-    {
-      "forceTls": "tls",
-      "dest": "${domain}",
-      "port": 443,
-      "remark": ""
-    }
-  ],
-  "xhttpSettings": {
-    "path": "/${xhttp_path}",
-    "host": "${domain}",
-    "headers": {},
-    "scMaxBufferedPosts": 30,
-    "scMaxEachPostBytes": "1000000",
-    "noSSEHeader": false,
-    "xPaddingBytes": "100-1000",
-    "mode": "packet-up"
-  },
-  "sockopt": {
-    "acceptProxyProtocol": false,
-    "tcpFastOpen": true,
-    "mark": 0,
-    "tproxy": "off",
-    "tcpMptcp": true,
-    "tcpNoDelay": true,
-    "domainStrategy": "UseIP",
-    "tcpMaxSeg": 1440,
-    "dialerProxy": "",
-    "tcpKeepAliveInterval": 0,
-    "tcpKeepAliveIdle": 300,
-    "tcpUserTimeout": 10000,
-    "tcpcongestion": "bbr",
-    "V6Only": false,
-    "tcpWindowClamp": 600,
-    "interface": ""
-  }
-}',
-             'inbound-/dev/shm/uds2023.sock,0666:0|',
-	     '{
-  "enabled": true,
-  "destOverride": [
-    "http",
-    "tls",
-    "quic",
-    "fakedns"
-  ],
-  "metadataOnly": false,
-  "routeOnly": false
-}'
-	     );
 	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
 	     '1',
 	     '0',
@@ -837,11 +738,11 @@ if [[ -f $XUIDB ]]; then
     {
       "comment": "",
       "created_at": 1756726925000,
-      "email": "firstT",
+      "email": "first",
       "enable": true,
       "expiryTime": 0,
       "limitIp": 0,
-      "password": "${trojan_pass}",
+      "password": "${client_id}",
       "reset": 0,
       "subId": "first",
       "tgId": 0,
@@ -869,6 +770,75 @@ if [[ -f $XUIDB ]]; then
   }
 }',
 'inbound-${trojan_port}',
+'{
+  "enabled": false,
+  "destOverride": [
+    "http",
+    "tls",
+    "quic",
+    "fakedns"
+  ],
+  "metadataOnly": false,
+  "routeOnly": false
+}'
+	);
+	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
+	     '1',
+	     '0',
+         '0',
+	     '0',
+         '${emoji_flag} hysteria2',
+	     '1',
+         '0',
+		 '',
+		 '${hy2_port}',
+		 'hysteria',
+		 '{
+  "clients": [
+    {
+      "auth": "${client_id}",
+      "email": "first",
+      "enable": true,
+      "expiryTime": 0,
+      "limitIp": 0,
+      "reset": 0,
+      "subId": "first",
+      "tgId": "",
+      "totalGB": 0
+    }
+  ],
+  "ignoreClientBandwidth": false
+}',
+'{
+  "network": "hysteria",
+  "security": "tls",
+  "externalProxy": [
+    {
+      "forceTls": "tls",
+      "dest": "${domain}",
+      "port": ${hy2_port},
+      "remark": ""
+    }
+  ],
+  "hysteriaSettings": {
+    "version": 2,
+    "udpIdleTimeout": 300
+  },
+  "tlsSettings": {
+    "serverName": "${domain}",
+    "certificates": [
+      {
+        "useFile": true,
+        "certificateFile": "/root/cert/${domain}/fullchain.pem",
+        "keyFile": "/root/cert/${domain}/privkey.pem"
+      }
+    ],
+    "alpn": [
+      "h3"
+    ]
+  }
+}',
+'inbound-${hy2_port}',
 '{
   "enabled": false,
   "destOverride": [
@@ -923,7 +893,7 @@ apt-get update && apt-get install -y -q wget curl tar tzdata
             fi
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
-        wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz https://github.com/MHSanaei/3x-ui/releases/download/v2.9.4/x-ui-linux-$(arch).tar.gz
+        wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub ${plain}"
             exit 1
@@ -938,7 +908,7 @@ apt-get update && apt-get install -y -q wget curl tar tzdata
             exit 1
         fi
         
-        url="https://github.com/MHSanaei/3x-ui/releases/download/v2.9.4/x-ui-linux-$(arch).tar.gz"
+        url="https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
         echo -e "Beginning to install x-ui $1"
         wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
@@ -1127,6 +1097,9 @@ ufw disable
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
+ufw allow 443/udp
+ufw allow ${hy2_port}/udp
+ufw allow ${hy2_port}/tcp
 ufw --force enable  
 ##################################Show Details##########################################################
 
