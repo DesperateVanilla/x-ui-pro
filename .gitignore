@@ -1,0 +1,6 @@
+*.go
+cookies.txt
+schema.txt
+*.db
+*.tar.gz
+x-ui/
