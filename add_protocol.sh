@@ -84,7 +84,7 @@ fi
 
 # Insert into database
 sqlite3 $XUIDB <<EOF
-    INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") SELECT '${next_inbound_id}', enable, email, 0, 0, 0, 0, 0 FROM clients;
+    INSERT OR IGNORE INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") SELECT '${next_inbound_id}', enable, email, 0, 0, 0, 0, 0 FROM clients;
     INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") SELECT id, ${next_inbound_id}, '', 1756726925000 FROM clients;
     INSERT INTO "inbounds" ("id", "user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
          ${next_inbound_id},
