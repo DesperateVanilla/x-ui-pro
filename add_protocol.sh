@@ -15,28 +15,28 @@ if [[ "$PROTOCOL" != "xhttp" ]]; then
 fi
 
 # Check if xhttp already exists
-EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE remark LIKE '%xhttp%';")
+EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE remark LIKE '%xhttp%';" | tail -n 1 | awk '{print $1}')
 if [[ -n "$EXISTING" ]]; then
     echo -e "\e[1;42m XHTTP protocol already exists in the database (inbound id: $EXISTING). \e[0m"
     exit 0
 fi
 
 # Get existing domain and emoji flag
-domain=$(sqlite3 $XUIDB "SELECT value FROM settings WHERE key='subURI';" | grep -v 'Loading resources' | awk -F/ '{print $3}' | grep -v '^$')
+domain=$(sqlite3 $XUIDB "SELECT value FROM settings WHERE key='subURI';" | tail -n 1 | awk -F/ '{print $3}' | grep -v '^$')
 if [[ -z "$domain" ]]; then
     # Fallback to serverName from any inbound
-    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="serverName": ")[^"]*' | head -n 1)
+    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="serverName": ")[^"]*' | tail -n 1)
 fi
 if [[ -z "$domain" ]]; then
     # Fallback to dest from any inbound
-    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="dest": ")[^"]*' | head -n 1)
+    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="dest": ")[^"]*' | tail -n 1)
 fi
 if [[ -z "$domain" ]]; then
     echo -e "\e[1;41m Failed to extract domain from database! \e[0m"
     exit 1
 fi
 
-emoji_flag=$(sqlite3 $XUIDB "SELECT remark FROM inbounds LIMIT 1;" | grep -v 'Loading resources' | awk '{print $1}')
+emoji_flag=$(sqlite3 $XUIDB "SELECT remark FROM inbounds LIMIT 1;" | tail -n 1 | awk '{print $1}')
 if [[ -z "$emoji_flag" ]]; then
     emoji_flag="🚀"
 fi
@@ -73,19 +73,19 @@ xhttp_path=$(gen_random_string 10)
 echo -e "\e[1;34m Generating XHTTP inbound on port $xhttp_port with path /$xhttp_port/$xhttp_path \e[0m"
 
 # Get next inbound ID (max id + 1)
-next_inbound_id=$(sqlite3 $XUIDB "SELECT COALESCE(MAX(id),0) + 1 FROM inbounds;")
+next_inbound_id=$(sqlite3 $XUIDB "SELECT COALESCE(MAX(id),0) + 1 FROM inbounds;" | tail -n 1 | awk '{print $1}')
 
-# Get the first client ID to link it
-client_id=$(sqlite3 $XUIDB "SELECT id FROM clients ORDER BY id ASC LIMIT 1;")
-if [[ -z "$client_id" ]]; then
+# Check if there are any clients
+client_count=$(sqlite3 $XUIDB "SELECT COUNT(id) FROM clients;" | tail -n 1 | awk '{print $1}')
+if [[ "$client_count" -eq 0 ]]; then
     echo -e "\e[1;41m No clients found in database! \e[0m"
     exit 1
 fi
 
 # Insert into database
 sqlite3 $XUIDB <<EOF
-    INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('${next_inbound_id}','1','first','0','0','0','0','0');
-    INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (${client_id}, ${next_inbound_id}, '', 1756726925000);
+    INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") SELECT '${next_inbound_id}', enable, email, 0, 0, 0, 0, 0 FROM clients;
+    INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") SELECT id, ${next_inbound_id}, '', 1756726925000 FROM clients;
     INSERT INTO "inbounds" ("id", "user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
          ${next_inbound_id},
 	     '1',
