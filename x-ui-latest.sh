@@ -58,6 +58,8 @@ trojan_port=$(make_port)
 hy2_port=$(make_port)
 ws_path=$(gen_random_string 10)
 trojan_path=$(gen_random_string 10)
+xhttp_port=$(make_port)
+xhttp_path=$(gen_random_string 10)
 config_username=$(gen_random_string 10)
 config_password=$(gen_random_string 10)
 AUTODOMAIN="n"
@@ -582,11 +584,13 @@ if [[ -f $XUIDB ]]; then
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('2','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
+	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('5','1','first','0','0','0','0','0');
              INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 4, '', 1756726925000);
+             INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 5, '', 1756726925000);
              INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
              '1',
 	     '0',
@@ -622,7 +626,7 @@ if [[ -f $XUIDB ]]; then
       "$reality_domain"
     ],
     "privateKey": "${private_key}",
-    "minClient": "",
+    "minClient": "0.0.0",
     "maxClient": "",
     "maxTimediff": 0,
     "shortIds": [
@@ -798,6 +802,61 @@ if [[ -f $XUIDB ]]; then
   }
 }',
 'inbound-${hy2_port}',
+'{
+  "enabled": false,
+  "destOverride": [
+    "http",
+    "tls",
+    "quic",
+    "fakedns"
+  ],
+  "metadataOnly": false,
+  "routeOnly": false
+}','1'
+	     );
+	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
+	     '1',
+	     '0',
+         '0',
+	     '0',
+         '${emoji_flag} xhttp',
+	     '1',
+         '0',
+		 '',
+		 '${xhttp_port}',
+		 'vless',
+		 '{
+  "clients": [],
+  "decryption": "none",
+  "fallbacks": []
+}',
+'{
+  "network": "xhttp",
+  "security": "none",
+  "externalProxy": [
+    {
+      "forceTls": "tls",
+      "dest": "${domain}",
+      "port": 443,
+      "remark": ""
+    }
+  ],
+  "xhttpSettings": {
+    "path": "/${xhttp_port}/${xhttp_path}",
+    "host": "${domain}",
+    "headers": {},
+    "scMaxBufferedPosts": 30,
+    "scMaxEachPostBytes": "1000000",
+    "noSSEHeader": false,
+    "xPaddingBytes": "100-1000",
+    "mode": "auto",
+    "extra": {
+      "noFastIn": false,
+      "noFastOut": false
+    }
+  }
+}',
+'inbound-${xhttp_port}',
 '{
   "enabled": false,
   "destOverride": [
