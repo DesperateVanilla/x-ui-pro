@@ -22,13 +22,21 @@ if [[ -n "$EXISTING" ]]; then
 fi
 
 # Get existing domain and emoji flag
-domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds WHERE remark LIKE '%ws%';" | grep -oP '(?<="dest": ")[^"]*')
+domain=$(sqlite3 $XUIDB "SELECT value FROM settings WHERE key='subURI';" | grep -v 'Loading resources' | awk -F/ '{print $3}' | grep -v '^$')
 if [[ -z "$domain" ]]; then
-    echo -e "\e[1;41m Failed to extract domain from existing inbounds! \e[0m"
+    # Fallback to serverName from any inbound
+    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="serverName": ")[^"]*' | head -n 1)
+fi
+if [[ -z "$domain" ]]; then
+    # Fallback to dest from any inbound
+    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="dest": ")[^"]*' | head -n 1)
+fi
+if [[ -z "$domain" ]]; then
+    echo -e "\e[1;41m Failed to extract domain from database! \e[0m"
     exit 1
 fi
 
-emoji_flag=$(sqlite3 $XUIDB "SELECT remark FROM inbounds LIMIT 1" | awk '{print $1}')
+emoji_flag=$(sqlite3 $XUIDB "SELECT remark FROM inbounds LIMIT 1;" | grep -v 'Loading resources' | awk '{print $1}')
 if [[ -z "$emoji_flag" ]]; then
     emoji_flag="🚀"
 fi
