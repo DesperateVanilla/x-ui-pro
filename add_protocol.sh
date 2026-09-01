@@ -79,6 +79,10 @@ fi
 echo -e "\e[1;34m Generating AmneziaWG keys... \e[0m"
 awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
 server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
+server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}')
+if [[ -z "$server_pub" ]]; then
+    server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}')
+fi
 
 next_inbound_id=$(sqlite3 $XUIDB "SELECT COALESCE(MAX(id),0) + 1 FROM inbounds;" | tail -n 1 | awk '{print $1}')
 created_at=$(date +%s000)
@@ -123,27 +127,26 @@ sqlite3 $XUIDB <<EOF
 		 '${awg_port}',
 		 'amneziawg',
 		 '{
-  "clients": []
+  "privateKey": "${server_priv}",
+  "publicKey": "${server_pub}",
+  "subnetIp": "10.8.1.0",
+  "subnetCidr": 24,
+  "mtu": 1280,
+  "primaryDns": "8.8.8.8",
+  "secondaryDns": "8.8.4.4",
+  "jc": 120,
+  "jmin": 50,
+  "jmax": 1000,
+  "s1": 0,
+  "s2": 0,
+  "h1": "1",
+  "h2": "2",
+  "h3": "3",
+  "h4": "4"
 }',
 '{
   "network": "amneziawg",
-  "security": "none",
-  "amneziawgSettings": {
-    "secretKey": "${server_priv}",
-    "address": [
-      "10.0.0.1/24"
-    ],
-    "peers": [],
-    "jc": 120,
-    "jmin": 50,
-    "jmax": 1000,
-    "s1": 0,
-    "s2": 0,
-    "h1": 1,
-    "h2": 2,
-    "h3": 3,
-    "h4": 4
-  }
+  "security": "none"
 }',
 'inbound-${awg_port}',
 '{
