@@ -24,7 +24,7 @@ import sqlite3, json
 try:
     con = sqlite3.connect('$XUIDB')
     cur = con.cursor()
-    cur.execute("SELECT id, settings FROM inbounds WHERE protocol='amneziawg'")
+    cur.execute('''SELECT id, settings FROM inbounds WHERE protocol='amneziawg' ''')
     for row in cur.fetchall():
         try:
             s = json.loads(row[1])
@@ -33,7 +33,7 @@ try:
                 if len(priv) > 0 and len(priv) != 44:
                     s['server']['privateKey'] = ''
                     s['server']['publicKey'] = ''
-                    cur.execute("UPDATE inbounds SET settings=? WHERE id=?", (json.dumps(s), row[0]))
+                    cur.execute('''UPDATE inbounds SET settings=? WHERE id=?''', (json.dumps(s), row[0]))
         except: pass
     con.commit()
 except Exception as e: print(e)
