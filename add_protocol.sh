@@ -18,6 +18,28 @@ echo -e "\e[1;34m Stopping X-UI to prevent database locks... \e[0m"
 x-ui stop
 sleep 2
 
+  echo -e "\e[1;34m Sanitizing corrupted AmneziaWG keys in DB... \e[0m"
+  python3 -c "
+import sqlite3, json
+try:
+    con = sqlite3.connect('$XUIDB')
+    cur = con.cursor()
+    cur.execute("SELECT id, settings FROM inbounds WHERE protocol='amneziawg'")
+    for row in cur.fetchall():
+        try:
+            s = json.loads(row[1])
+            if 'server' in s:
+                priv = s['server'].get('privateKey', '')
+                if len(priv) > 0 and len(priv) != 44:
+                    s['server']['privateKey'] = ''
+                    s['server']['publicKey'] = ''
+                    cur.execute("UPDATE inbounds SET settings=? WHERE id=?", (json.dumps(s), row[0]))
+        except: pass
+    con.commit()
+except Exception as e: print(e)
+"
+
+
 echo -e "\e[1;34m Compressing Inbound IDs to prevent AWG ID error... \e[0m"
 python3 -c "
 import sqlite3, sys
