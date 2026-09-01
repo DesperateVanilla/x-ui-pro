@@ -45,7 +45,7 @@ except Exception as e:
 "
 
 # Check if awg already exists on LOCAL node
-EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE protocol='amneziawg' AND node_id IS NULL;" | tail -n 1 | awk '{print $1}')
+EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE protocol='amneziawg' AND (node_id IS NULL OR node_id = '');" | tail -n 1 | awk '{print $1}')
 if [[ -n "$EXISTING" ]]; then
     echo -e "\e[1;42m AmneziaWG protocol already exists on Local Panel (inbound id: $EXISTING). \e[0m"
     exit 0
