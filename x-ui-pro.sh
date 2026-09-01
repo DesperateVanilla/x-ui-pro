@@ -518,116 +518,75 @@ json_uri=https://${domain}/${web_path}?name=
 shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8))
 
 SETUP_WARP(){
-    msg_inf "Installing Cloudflare WARP in SOCKS5 mode for AI Unblock..."
-    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-    $Pak -y update
-    $Pak -y install cloudflare-warp
+    msg_inf "Cleaning up any old external WARP clients (warp-cli, wireproxy)..."
+    if command -v warp-cli &> /dev/null; then
+        warp-cli --accept-tos registration delete 2>/dev/null || true
+        systemctl stop warp-svc 2>/dev/null || true
+        $Pak -y remove cloudflare-warp || true
+    fi
+    systemctl stop wireproxy 2>/dev/null || true
+    systemctl disable wireproxy 2>/dev/null || true
+    rm -f /usr/local/bin/wireproxy /usr/local/bin/warpwp /usr/local/bin/warp-wireproxy-native.sh
+    rm -rf /etc/wireguard/proxy.conf /etc/wireguard/warp*
 
-    warp-cli --accept-tos registration new
-    warp-cli --accept-tos mode proxy
-    warp-cli --accept-tos proxy port 40000
-    warp-cli --accept-tos connect
-
-    sleep 3
-    msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic via WARP..."
+    msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic to native panel WARP..."
     
-    # We construct the default template with WARP outbound and routing
-    XRAY_TEMPLATE='{
-  "log": {
-    "access": "",
-    "error": "",
-    "loglevel": "warning"
-  },
-  "inbounds": [],
-  "outbounds": [
-    {
-      "tag": "direct",
-      "protocol": "freedom",
-      "settings": {}
-    },
-    {
-      "tag": "blocked",
-      "protocol": "blackhole",
-      "settings": {}
-    },
-    {
-      "tag": "warp",
-      "protocol": "socks",
-      "settings": {
-        "servers": [
-          {
-            "address": "127.0.0.1",
-            "port": 40000
-          }
+    current_config=$(sqlite3 -batch -noheader -init /dev/null $XUIDB "SELECT value FROM settings WHERE key='xrayTemplateConfig';")
+    if ! echo "$current_config" | jq . >/dev/null 2>&1; then
+        current_config=""
+    fi
+    
+    if [ -z "$current_config" ] || [ "$current_config" == "null" ]; then
+        new_config='{
+      "log": { "access": "", "error": "", "loglevel": "warning" },
+      "inbounds": [],
+      "outbounds": [
+        { "tag": "direct", "protocol": "freedom", "settings": {} },
+        { "tag": "blocked", "protocol": "blackhole", "settings": {} }
+      ],
+      "routing": {
+        "domainStrategy": "AsIs",
+        "rules": [
+          { "type": "field", "inboundTag": [ "api" ], "outboundTag": "api" },
+          { "type": "field", "outboundTag": "blocked", "ip": [ "geoip:private" ] },
+          { "type": "field", "outboundTag": "blocked", "protocol": [ "bittorrent" ] },
+          { "type": "field", "outboundTag": "warp", "domain": [
+              "geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
+              "domain:api.fitbit.com", "domain:fitbit-pa.googleapis.com", "domain:fitbitvestibuleshim-pa.googleapis.com",
+              "domain:fitbit.google.com", "domain:gemini.google.com", "domain:aistudio.google.com", "domain:generativelanguage.googleapis.com",
+              "domain:aitestkitchen.withgoogle.com", "domain:aisandbox-pa.googleapis.com", "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
+              "domain:alkalimakersuite-pa.clients6.google.com", "domain:assistant-s3-pa.googleapis.com", "domain:proactivebackend-pa.googleapis.com",
+              "domain:robinfrontend-pa.googleapis.com", "domain:o.pki.goog", "domain:labs.google", "domain:notebooklm.google.com", "domain:jules.google.com",
+              "domain:stitch.withgoogle.com"
+          ] }
         ]
       }
-    }
-  ],
-  "routing": {
-    "domainStrategy": "AsIs",
-    "rules": [
-      {
-        "type": "field",
-        "inboundTag": [
-          "api"
-        ],
-        "outboundTag": "api"
-      },
-      {
-        "type": "field",
-        "outboundTag": "blocked",
-        "ip": [
-          "geoip:private"
-        ]
-      },
-      {
-        "type": "field",
-        "outboundTag": "blocked",
-        "protocol": [
-          "bittorrent"
-        ]
-      },
-      {
-        "type": "field",
-        "outboundTag": "warp",
-        "domain": [
-          "geosite:openai",
-          "geosite:anthropic",
-          "domain:chatgpt.com",
-          "domain:oaistatic.com",
-          "domain:oaiusercontent.com",
-          "domain:claude.ai",
-          "domain:api.fitbit.com",
-          "domain:fitbit-pa.googleapis.com",
-          "domain:fitbitvestibuleshim-pa.googleapis.com",
-          "domain:fitbit.google.com",
-          "domain:gemini.google.com",
-          "domain:aistudio.google.com",
-          "domain:generativelanguage.googleapis.com",
-          "domain:aitestkitchen.withgoogle.com",
-          "domain:aisandbox-pa.googleapis.com",
-          "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
-          "domain:alkalimakersuite-pa.clients6.google.com",
-          "domain:assistant-s3-pa.googleapis.com",
-          "domain:proactivebackend-pa.googleapis.com",
-          "domain:robinfrontend-pa.googleapis.com",
-          "domain:o.pki.goog",
-          "domain:labs.google",
-          "domain:notebooklm.google.com",
-          "domain:jules.google.com",
-          "domain:stitch.withgoogle.com"
-        ]
-      }
-    ]
-  }
-}'
-
-    ESCAPED_TEMPLATE=$(echo "$XRAY_TEMPLATE" | sed "s/'/''/g")
+    }'
+    else
+        new_config=$(echo "$current_config" | jq '
+            .outbounds = [.outbounds[]? | select(.protocol != "socks" or .tag != "warp")] |
+            if .routing == null then .routing = {"domainStrategy": "AsIs", "rules": []} else . end |
+            if .routing.rules == null then .routing.rules = [] else . end |
+            .routing.rules = [.routing.rules[] | select(.outboundTag != "warp")] + 
+            [{"type": "field", "outboundTag": "warp", "domain": [
+              "geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
+              "domain:api.fitbit.com", "domain:fitbit-pa.googleapis.com", "domain:fitbitvestibuleshim-pa.googleapis.com",
+              "domain:fitbit.google.com", "domain:gemini.google.com", "domain:aistudio.google.com", "domain:generativelanguage.googleapis.com",
+              "domain:aitestkitchen.withgoogle.com", "domain:aisandbox-pa.googleapis.com", "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
+              "domain:alkalimakersuite-pa.clients6.google.com", "domain:assistant-s3-pa.googleapis.com", "domain:proactivebackend-pa.googleapis.com",
+              "domain:robinfrontend-pa.googleapis.com", "domain:o.pki.goog", "domain:labs.google", "domain:notebooklm.google.com", "domain:jules.google.com",
+              "domain:stitch.withgoogle.com"
+            ]}]
+        ')
+    fi
+    
+    escaped_config=$(echo "$new_config" | sed "s/'/''/g")
     sqlite3 -batch -noheader -init /dev/null $XUIDB <<EOF
 DELETE FROM settings WHERE key='xrayTemplateConfig';
-INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${ESCAPED_TEMPLATE}');
+INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${escaped_config}');
 EOF
+    msg_ok "Native WARP routing configuration injected successfully!"
+    msg_inf "IMPORTANT: Go to your 3X-UI Panel -> Outbounds -> Add WARP to actually generate the connection!"
 }
 
 ########################################Update X-UI Port/Path for first INSTALL#########################
