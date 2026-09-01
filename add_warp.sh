@@ -18,25 +18,16 @@ msg_inf "Installing requirements (jq, curl, gpg)..."
 $Pak -y update
 $Pak -y install jq curl gnupg2 sqlite3
 
-msg_inf "Installing Cloudflare WARP..."
-if ! command -v warp-cli &> /dev/null; then
-    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-    $Pak -y update
-    $Pak -y install cloudflare-warp
-else
-    msg_ok "Cloudflare WARP is already installed."
+msg_inf "Cleaning up old cloudflare-warp if present..."
+if command -v warp-cli &> /dev/null; then
+    warp-cli --accept-tos registration delete 2>/dev/null || true
+    systemctl stop warp-svc 2>/dev/null || true
+    $Pak -y remove cloudflare-warp || true
 fi
 
-msg_inf "Configuring WARP in SOCKS5 proxy mode (Port 40000)..."
-# To fix "Old registration is still around" error:
-warp-cli --accept-tos registration delete 2>/dev/null || true
-warp-cli --accept-tos registration new
-warp-cli --accept-tos mode proxy
-warp-cli --accept-tos proxy port 40000
-warp-cli --accept-tos connect
+msg_inf "Installing WARP WireProxy Manager..."
+bash <(wget -qO- https://raw.githubusercontent.com/kuzzrus/WARP_WireProxy_Manager/main/warpwp.sh) --install
 sleep 3
-warp-cli --accept-tos status
 
 msg_inf "Injecting WARP Outbound and Routing into x-ui database..."
 # Use -batch -noheader -init /dev/null to prevent .sqliterc output pollution
