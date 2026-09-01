@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 [[ $EUID -ne 0 ]] && echo "not root!" && sudo su -
 
 XUIDB="/etc/x-ui/x-ui.db"
