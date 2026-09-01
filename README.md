@@ -76,10 +76,10 @@ sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/
 
 ## ➕ Добавление протоколов (без переустановки)
 
-Если у вас уже установлена и работает панель, и вы хотите безопасно добавить новый протокол (например, **XHTTP**) без потери текущих настроек, клиентов и конфигураций Nginx, воспользуйтесь мини-скриптом:
+Если у вас уже установлена и работает панель, и вы хотите безопасно добавить новый протокол (например, **AmneziaWG (AWG)**) без потери текущих настроек, клиентов и конфигураций Nginx, воспользуйтесь мини-скриптом:
 
 ```bash
-sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/add_protocol.sh) xhttp"
+sudo su -c "bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/add_protocol.sh) awg"
 ```
 
 Скрипт автоматически считает ваши домены из рабочей базы 3x-ui, сгенерирует уникальный порт и путь, добавит подключение и привяжет к нему существующих клиентов. Панель перезапустится автоматически.

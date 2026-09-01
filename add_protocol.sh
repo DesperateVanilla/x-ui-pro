@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 [[ $EUID -ne 0 ]] && echo "not root!" && sudo su -
 
 XUIDB="/etc/x-ui/x-ui.db"
@@ -9,54 +9,27 @@ if [[ ! -f $XUIDB ]]; then
 fi
 
 PROTOCOL=$1
-if [[ "$PROTOCOL" != "xhttp" ]]; then
-    echo -e "\e[1;34m Usage: bash add_protocol.sh xhttp \e[0m"
+if [[ "$PROTOCOL" != "awg" ]]; then
+    echo -e "\e[1;34m Usage: bash add_protocol.sh awg \e[0m"
     exit 1
 fi
 
-# Check if xhttp already exists
-EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE remark LIKE '%xhttp%';" | tail -n 1 | awk '{print $1}')
+# Check if awg already exists
+EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE protocol='amneziawg';" | tail -n 1 | awk '{print $1}')
 if [[ -n "$EXISTING" ]]; then
-    echo -e "\e[1;42m XHTTP protocol already exists in the database (inbound id: $EXISTING). \e[0m"
+    echo -e "\e[1;42m AmneziaWG protocol already exists in the database (inbound id: $EXISTING). \e[0m"
     exit 0
 fi
 
-# Get existing domain and emoji flag
-domain=$(sqlite3 $XUIDB "SELECT value FROM settings WHERE key='subURI';" | tail -n 1 | awk -F/ '{print $3}' | grep -v '^$')
-if [[ -z "$domain" ]]; then
-    # Fallback to serverName from any inbound
-    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="serverName": ")[^"]*' | tail -n 1)
-fi
-if [[ -z "$domain" ]]; then
-    # Fallback to dest from any inbound
-    domain=$(sqlite3 $XUIDB "SELECT stream_settings FROM inbounds;" | grep -oP '(?<="dest": ")[^"]*' | tail -n 1)
-fi
-if [[ -z "$domain" ]]; then
-    echo -e "\e[1;41m Failed to extract domain from database! \e[0m"
-    exit 1
-fi
-
-emoji_flag=$(sqlite3 $XUIDB "SELECT remark FROM inbounds LIMIT 1;" | tail -n 1 | awk '{print $1}')
-if [[ -z "$emoji_flag" ]]; then
-    emoji_flag="🚀"
-fi
-
+# AWG port shouldn't conflict with existing
 get_port() {
 	echo $(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
 }
-
-gen_random_string() {
-    local length="$1"
-    head -c 4096 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "$length"
-    echo
-}
-
 check_free() {
 	local port=$1
-	nc -z 127.0.0.1 $port &>/dev/null
+	nc -z -u 127.0.0.1 $port &>/dev/null
 	return $?
 }
-
 make_port() {
 	while true; do
 		PORT=$(get_port)
@@ -66,70 +39,113 @@ make_port() {
 		fi
 	done
 }
+awg_port=$(make_port)
 
-xhttp_port=$(make_port)
-xhttp_path=$(gen_random_string 10)
+echo -e "\e[1;34m Compressing Inbound IDs to prevent AWG ID error... \e[0m"
+python3 -c "
+import sqlite3, sys
+db_path = '$XUIDB'
+try:
+    con = sqlite3.connect(db_path)
+    cur = con.cursor()
+    cur.execute('SELECT id FROM inbounds ORDER BY id')
+    inbounds = [row[0] for row in cur.fetchall()]
+    if not inbounds or max(inbounds) <= 400:
+        sys.exit(0)
+    
+    new_id = 1
+    for old_id in inbounds:
+        if old_id != new_id:
+            cur.execute('UPDATE inbounds SET id = ? WHERE id = ?', (new_id, old_id))
+            for table in ['client_inbounds', 'client_traffics', 'hosts', 'inbound_client_ips']:
+                try:
+                    cur.execute(f'UPDATE {table} SET inbound_id = ? WHERE inbound_id = ?', (new_id, old_id))
+                except sqlite3.OperationalError:
+                    pass
+        new_id += 1
+    cur.execute(\"UPDATE sqlite_sequence SET seq = ? WHERE name = 'inbounds'\", (new_id - 1,))
+    con.commit()
+    con.close()
+    print('IDs compressed successfully.')
+except Exception as e:
+    print('Error compressing IDs:', e)
+"
 
-echo -e "\e[1;34m Generating XHTTP inbound on port $xhttp_port with path /$xhttp_port/$xhttp_path \e[0m"
+emoji_flag=$(sqlite3 $XUIDB "SELECT name FROM nodes WHERE id=1;" | tail -n 1 | awk '{print $1}')
+if [[ -z "$emoji_flag" ]]; then
+    emoji_flag="🚀"
+fi
 
-# Get next inbound ID (max id + 1)
+echo -e "\e[1;34m Generating AmneziaWG keys... \e[0m"
+awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
+
 next_inbound_id=$(sqlite3 $XUIDB "SELECT COALESCE(MAX(id),0) + 1 FROM inbounds;" | tail -n 1 | awk '{print $1}')
+created_at=$(date +%s000)
 
-# Check if there are any clients
-client_count=$(sqlite3 $XUIDB "SELECT COUNT(id) FROM clients;" | tail -n 1 | awk '{print $1}')
-if [[ "$client_count" -eq 0 ]]; then
+echo -e "\e[1;34m Generating AWG inbound on port $awg_port \e[0m"
+
+# Update existing clients with AWG keys
+client_ids=$(sqlite3 $XUIDB "SELECT id FROM clients;")
+if [[ -z "$client_ids" ]]; then
     echo -e "\e[1;41m No clients found in database! \e[0m"
     exit 1
 fi
 
-# Insert into database
+awg_ip_counter=2
+for cid in $client_ids; do
+    client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+    cpriv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
+    cpub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
+    if [[ -z "$cpub" ]]; then
+        cpub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}')
+    fi
+    allowed_ip="10.0.0.${awg_ip_counter}/32"
+    
+    sqlite3 $XUIDB "UPDATE clients SET wg_private_key='${cpriv}', wg_public_key='${cpub}', wg_allowed_ips='${allowed_ip}' WHERE id=${cid};"
+    ((awg_ip_counter++))
+done
+
+# Insert AWG Inbound
 sqlite3 $XUIDB <<EOF
     INSERT OR IGNORE INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") SELECT '${next_inbound_id}', enable, email, 0, 0, 0, 0, 0 FROM clients;
-    INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") SELECT id, ${next_inbound_id}, '', 1756726925000 FROM clients;
+    INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") SELECT id, ${next_inbound_id}, '', ${created_at} FROM clients;
     INSERT INTO "inbounds" ("id", "user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
          ${next_inbound_id},
 	     '1',
 	     '0',
          '0',
 	     '0',
-         '${emoji_flag} xhttp',
+         '${emoji_flag} amneziawg',
 	     '1',
          '0',
 		 '',
-		 '${xhttp_port}',
-		 'vless',
+		 '${awg_port}',
+		 'amneziawg',
 		 '{
-  "clients": [],
-  "decryption": "none",
-  "fallbacks": []
+  "clients": []
 }',
 '{
-  "network": "xhttp",
+  "network": "amneziawg",
   "security": "none",
-  "externalProxy": [
-    {
-      "forceTls": "tls",
-      "dest": "${domain}",
-      "port": 443,
-      "remark": ""
-    }
-  ],
-  "xhttpSettings": {
-    "path": "/${xhttp_port}/${xhttp_path}",
-    "host": "${domain}",
-    "headers": {},
-    "scMaxBufferedPosts": 30,
-    "scMaxEachPostBytes": "1000000",
-    "noSSEHeader": false,
-    "xPaddingBytes": "100-1000",
-    "mode": "auto",
-    "extra": {
-      "noFastIn": false,
-      "noFastOut": false
-    }
+  "amneziawgSettings": {
+    "secretKey": "${server_priv}",
+    "address": [
+      "10.0.0.1/24"
+    ],
+    "peers": [],
+    "jc": 120,
+    "jmin": 50,
+    "jmax": 1000,
+    "s1": 0,
+    "s2": 0,
+    "h1": 1,
+    "h2": 2,
+    "h3": 3,
+    "h4": 4
   }
 }',
-'inbound-${xhttp_port}',
+'inbound-${awg_port}',
 '{
   "enabled": false,
   "destOverride": [
@@ -144,7 +160,6 @@ sqlite3 $XUIDB <<EOF
 	);
 EOF
 
-echo -e "\e[1;42m XHTTP inbound successfully added! Restarting X-UI... \e[0m"
+echo -e "\e[1;42m AmneziaWG inbound successfully added! Restarting X-UI... \e[0m"
 x-ui restart
-
 echo -e "\e[1;34m Check your 3x-ui panel to see the new connection. \e[0m"

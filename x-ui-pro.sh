@@ -58,8 +58,6 @@ trojan_port=$(make_port)
 hy2_port=$(make_port)
 ws_path=$(gen_random_string 10)
 trojan_path=$(gen_random_string 10)
-xhttp_port=$(make_port)
-xhttp_path=$(gen_random_string 10)
 config_username=$(gen_random_string 10)
 config_password=$(gen_random_string 10)
 AUTODOMAIN="n"
@@ -601,6 +599,24 @@ if [[ -f $XUIDB ]]; then
         public_key=$(echo "$output" | grep "^Password" | awk '{print $3}')
 
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
+        
+        awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
+        client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
+        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
+        if [[ -z "$client_pub" ]]; then
+            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}')
+        fi
+        
+        awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
+        client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
+        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
+        if [[ -z "$client_pub" ]]; then
+            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}')
+        fi
         ip_info=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/)
         emoji_flag=$(echo "$ip_info" | jq -r '.flag.emoji')
         country=$(echo "$ip_info" | jq -r '.country')
@@ -661,12 +677,14 @@ if [[ -f $XUIDB ]]; then
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('5','1','first','0','0','0','0','0');
-             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000);
+	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('6','1','first','0','0','0','0','0');
+             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at", "wg_private_key", "wg_public_key", "wg_allowed_ips") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000, '${client_priv}', '${client_pub}', '10.0.0.2/32');
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 4, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 5, '', 1756726925000);
+             INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 6, '', 1756726925000);
              INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
              '1',
 	     '0',
@@ -892,53 +910,46 @@ if [[ -f $XUIDB ]]; then
 	     '0',
          '0',
 	     '0',
-         '${emoji_flag} xhttp',
+         '${emoji_flag} amneziawg',
 	     '1',
          '0',
 		 '',
-		 '${xhttp_port}',
-		 'vless',
+		 '${awg_port}',
+		 'amneziawg',
 		 '{
-  "clients": [],
-  "decryption": "none",
-  "fallbacks": []
+  "clients": []
 }',
 '{
-  "network": "xhttp",
+  "network": "amneziawg",
   "security": "none",
-  "externalProxy": [
-    {
-      "forceTls": "tls",
-      "dest": "${domain}",
-      "port": 443,
-      "remark": ""
-    }
-  ],
-  "xhttpSettings": {
-    "path": "/${xhttp_port}/${xhttp_path}",
-    "host": "${domain}",
-    "headers": {},
-    "scMaxBufferedPosts": 30,
-    "scMaxEachPostBytes": "1000000",
-    "noSSEHeader": false,
-    "xPaddingBytes": "100-1000",
-    "mode": "auto",
-    "extra": {
-      "noFastIn": false,
-      "noFastOut": false
-    }
+  "amneziawgSettings": {
+    "secretKey": "${server_priv}",
+    "address": [
+      "10.0.0.1/24"
+    ],
+    "peers": [],
+    "jc": 120,
+    "jmin": 50,
+    "jmax": 1000,
+    "s1": 0,
+    "s2": 0,
+    "h1": 1,
+    "h2": 2,
+    "h3": 3,
+    "h4": 4
   }
 }',
-'inbound-${xhttp_port}',
+'inbound-${awg_port}',
 '{
-  "enabled": true,
+  "enabled": false,
   "destOverride": [
     "http",
     "tls",
-    "quic"
+    "quic",
+    "fakedns"
   ],
   "metadataOnly": false,
-  "routeOnly": true
+  "routeOnly": false
 }'
 	);
 EOF
