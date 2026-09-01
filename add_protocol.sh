@@ -14,6 +14,10 @@ if [[ "$PROTOCOL" != "awg" ]]; then
     exit 1
 fi
 
+echo -e "\e[1;34m Stopping X-UI to prevent database locks... \e[0m"
+x-ui stop
+sleep 2
+
 echo -e "\e[1;34m Compressing Inbound IDs to prevent AWG ID error... \e[0m"
 python3 -c "
 import sqlite3, sys
@@ -48,6 +52,7 @@ except Exception as e:
 EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE protocol='amneziawg' AND (node_id IS NULL OR node_id = '');" | tail -n 1 | awk '{print $1}')
 if [[ -n "$EXISTING" ]]; then
     echo -e "\e[1;42m AmneziaWG protocol already exists on Local Panel (inbound id: $EXISTING). \e[0m"
+    x-ui restart
     exit 0
 fi
 
@@ -93,6 +98,7 @@ echo -e "\e[1;34m Generating AWG inbound on port $awg_port \e[0m"
 client_ids=$(sqlite3 $XUIDB "SELECT id FROM clients;")
 if [[ -z "$client_ids" ]]; then
     echo -e "\e[1;41m No clients found in database! \e[0m"
+    x-ui restart
     exit 1
 fi
 
@@ -127,22 +133,25 @@ sqlite3 $XUIDB <<EOF
 		 '${awg_port}',
 		 'amneziawg',
 		 '{
-  "privateKey": "${server_priv}",
-  "publicKey": "${server_pub}",
-  "subnetIp": "10.8.1.0",
-  "subnetCidr": 24,
-  "mtu": 1280,
-  "primaryDns": "8.8.8.8",
-  "secondaryDns": "8.8.4.4",
-  "jc": 120,
-  "jmin": 50,
-  "jmax": 1000,
-  "s1": 0,
-  "s2": 0,
-  "h1": "1",
-  "h2": "2",
-  "h3": "3",
-  "h4": "4"
+  "server": {
+    "privateKey": "${server_priv}",
+    "publicKey": "${server_pub}",
+    "subnetIp": "10.8.1.0",
+    "subnetCidr": 24,
+    "mtu": 1280,
+    "primaryDns": "8.8.8.8",
+    "secondaryDns": "8.8.4.4",
+    "jc": 120,
+    "jmin": 50,
+    "jmax": 1000,
+    "s1": 0,
+    "s2": 0,
+    "h1": "1",
+    "h2": "2",
+    "h3": "3",
+    "h4": "4"
+  },
+  "clients": []
 }',
 '{
   "network": "amneziawg",
