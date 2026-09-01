@@ -14,33 +14,6 @@ if [[ "$PROTOCOL" != "awg" ]]; then
     exit 1
 fi
 
-# Check if awg already exists
-EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE protocol='amneziawg';" | tail -n 1 | awk '{print $1}')
-if [[ -n "$EXISTING" ]]; then
-    echo -e "\e[1;42m AmneziaWG protocol already exists in the database (inbound id: $EXISTING). \e[0m"
-    exit 0
-fi
-
-# AWG port shouldn't conflict with existing
-get_port() {
-	echo $(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
-}
-check_free() {
-	local port=$1
-	nc -z -u 127.0.0.1 $port &>/dev/null
-	return $?
-}
-make_port() {
-	while true; do
-		PORT=$(get_port)
-		if ! check_free $PORT; then 
-			echo $PORT
-			break
-		fi
-	done
-}
-awg_port=$(make_port)
-
 echo -e "\e[1;34m Compressing Inbound IDs to prevent AWG ID error... \e[0m"
 python3 -c "
 import sqlite3, sys
@@ -70,6 +43,33 @@ try:
 except Exception as e:
     print('Error compressing IDs:', e)
 "
+
+# Check if awg already exists on LOCAL node
+EXISTING=$(sqlite3 $XUIDB "SELECT id FROM inbounds WHERE protocol='amneziawg' AND node_id IS NULL;" | tail -n 1 | awk '{print $1}')
+if [[ -n "$EXISTING" ]]; then
+    echo -e "\e[1;42m AmneziaWG protocol already exists on Local Panel (inbound id: $EXISTING). \e[0m"
+    exit 0
+fi
+
+# AWG port shouldn't conflict with existing
+get_port() {
+	echo $(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
+}
+check_free() {
+	local port=$1
+	nc -z -u 127.0.0.1 $port &>/dev/null
+	return $?
+}
+make_port() {
+	while true; do
+		PORT=$(get_port)
+		if ! check_free $PORT; then 
+			echo $PORT
+			break
+		fi
+	done
+}
+awg_port=$(make_port)
 
 emoji_flag=$(sqlite3 $XUIDB "SELECT name FROM nodes WHERE id=1;" | tail -n 1 | awk '{print $1}')
 if [[ -z "$emoji_flag" ]]; then
