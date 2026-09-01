@@ -139,3 +139,15 @@ apt-get install -f
 ## 📜 Благодарности
 - [MHSanaei/3x-ui](https://github.com/MHSanaei/3x-ui) — за актуальную панель управления.
 - [GFW4Fun/x-ui-pro](https://github.com/GFW4Fun/x-ui-pro) & legiz-ru — за оригинальный концепт Nginx + 3X-UI.
+
+
+## AI & Global Bypass Routing (WARP+)
+The installer now features a fully automated integration with Cloudflare WARP+ and `roscomvpn` geo-databases to bypass advanced DPI and AI service geo-blocks (such as Google Gemini, Antigravity, ChatGPT, Claude).
+
+**Features:**
+- Installs official `cloudflare-warp` and proxies traffic via local SOCKS5.
+- Automatically scrapes and applies a free **WARP+ Premium Key** from Telegram.
+- Downloads optimized `geoip.dat` and `geosite.dat` from `hydraponique/roscomvpn`.
+- Implements an anti-ECH (Encrypted Client Hello) routing fallback: all CIS IPs go `direct`, while ALL other foreign TCP/UDP traffic is forcefully routed through WARP+.
+- Automatically enables `sniffing` in `routeOnly` mode for all inbounds.
+- Mitigates HTTP/3 QUIC timeouts by blackholing UDP on port 443 for AI domains.
