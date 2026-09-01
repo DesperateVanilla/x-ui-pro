@@ -29,6 +29,8 @@ else
 fi
 
 msg_inf "Configuring WARP in SOCKS5 proxy mode (Port 40000)..."
+# To fix "Old registration is still around" error:
+warp-cli --accept-tos registration delete 2>/dev/null || true
 warp-cli --accept-tos registration new
 warp-cli --accept-tos mode proxy
 warp-cli --accept-tos proxy port 40000
@@ -37,10 +39,17 @@ sleep 3
 warp-cli --accept-tos status
 
 msg_inf "Injecting WARP Outbound and Routing into x-ui database..."
-current_config=$(sqlite3 $XUIDB "SELECT value FROM settings WHERE key='xrayTemplateConfig';")
+# Use -batch -noheader -init /dev/null to prevent .sqliterc output pollution
+current_config=$(sqlite3 -batch -noheader -init /dev/null $XUIDB "SELECT value FROM settings WHERE key='xrayTemplateConfig';")
+
+# Validate current config is actually valid JSON
+if ! echo "$current_config" | jq . >/dev/null 2>&1; then
+    msg_err "Current xrayTemplateConfig is empty or corrupted (invalid JSON). Generating a fresh default config..."
+    current_config=""
+fi
 
 if [ -z "$current_config" ] || [ "$current_config" == "null" ]; then
-    msg_inf "No custom xrayTemplateConfig found. Generating default with WARP..."
+    msg_inf "Generating default template with WARP..."
     new_config='{
   "log": { "access": "", "error": "", "loglevel": "warning" },
   "inbounds": [],
@@ -68,7 +77,7 @@ if [ -z "$current_config" ] || [ "$current_config" == "null" ]; then
   }
 }'
 else
-    msg_inf "Found existing xrayTemplateConfig. Updating via jq..."
+    msg_inf "Found existing valid xrayTemplateConfig. Updating via jq..."
     
     # Check if 'warp' outbound exists, if not, add it
     has_warp=$(echo "$current_config" | jq '[.outbounds[]? | select(.tag == "warp")] | length')
@@ -76,7 +85,7 @@ else
         current_config=$(echo "$current_config" | jq '.outbounds += [{"tag": "warp", "protocol": "socks", "settings": {"servers": [{"address": "127.0.0.1", "port": 40000}]}}]')
     fi
     
-    # Add or replace the warp routing rule
+    # Add or replace the warp routing rule safely
     new_config=$(echo "$current_config" | jq '
         if .routing == null then .routing = {"domainStrategy": "AsIs", "rules": []} else . end |
         if .routing.rules == null then .routing.rules = [] else . end |
@@ -93,9 +102,15 @@ else
     ')
 fi
 
+# Validate new config before destroying the old one
+if ! echo "$new_config" | jq . >/dev/null 2>&1; then
+    msg_err "Critical Error: Generated JSON is invalid. Aborting to prevent x-ui crash."
+    exit 1
+fi
+
 # Insert back to SQLite
 escaped_config=$(echo "$new_config" | sed "s/'/''/g")
-sqlite3 $XUIDB <<EOF
+sqlite3 -batch -noheader -init /dev/null $XUIDB <<EOF
 DELETE FROM settings WHERE key='xrayTemplateConfig';
 INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${escaped_config}');
 EOF

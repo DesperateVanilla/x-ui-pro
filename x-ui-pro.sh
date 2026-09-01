@@ -624,7 +624,7 @@ SETUP_WARP(){
 }'
 
     ESCAPED_TEMPLATE=$(echo "$XRAY_TEMPLATE" | sed "s/'/''/g")
-    sqlite3 $XUIDB <<EOF
+    sqlite3 -batch -noheader -init /dev/null $XUIDB <<EOF
 DELETE FROM settings WHERE key='xrayTemplateConfig';
 INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${ESCAPED_TEMPLATE}');
 EOF
