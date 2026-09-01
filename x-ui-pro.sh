@@ -518,15 +518,17 @@ json_uri=https://${domain}/${web_path}?name=
 shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8))
 
 SETUP_WARP(){
-    msg_inf "Cleaning up old cloudflare-warp if present..."
-    if command -v warp-cli &> /dev/null; then
-        warp-cli --accept-tos registration delete 2>/dev/null || true
-        systemctl stop warp-svc 2>/dev/null || true
-        $Pak -y remove cloudflare-warp || true
-    fi
+    msg_inf "Installing Cloudflare WARP in SOCKS5 mode for AI Unblock..."
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+    $Pak -y update
+    $Pak -y install cloudflare-warp
 
-    msg_inf "Installing WARP WireProxy Manager for AI Unblock (SOCKS5)..."
-    bash <(wget -qO- https://raw.githubusercontent.com/kuzzrus/WARP_WireProxy_Manager/main/warpwp.sh) --install
+    warp-cli --accept-tos registration new
+    warp-cli --accept-tos mode proxy
+    warp-cli --accept-tos proxy port 40000
+    warp-cli --accept-tos connect
+
     sleep 3
     msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic via WARP..."
     
