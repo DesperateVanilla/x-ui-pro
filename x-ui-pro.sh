@@ -154,6 +154,15 @@ if [[ "${RealitySubDomain}.${RealityMainDomain}" != "${reality_domain}" ]] ; the
 	RealityMainDomain=${reality_domain}
 fi
 
+
+while true; do	
+	if [[ "$WARP" == "y" || "$WARP" == "n" ]]; then
+		break
+	fi
+	echo -en "Do you want to configure AI & Global Bypass routing via WARP+? (y/n): " && read WARP 
+done
+
+
 ###############################Install Packages#########################################################
 command -v ufw >/dev/null 2>&1 && ufw disable
 if [[ ${INSTALL} == *"y"* ]]; then
@@ -518,77 +527,70 @@ json_uri=https://${domain}/${web_path}?name=
 shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8))
 
 SETUP_WARP(){
-    msg_inf "Cleaning up any old external WARP clients (warp-cli, wireproxy)..."
-    if command -v warp-cli &> /dev/null; then
-        warp-cli --accept-tos registration delete 2>/dev/null || true
-        systemctl stop warp-svc 2>/dev/null || true
-        $Pak -y remove cloudflare-warp || true
-    fi
-    systemctl stop wireproxy 2>/dev/null || true
-    systemctl disable wireproxy 2>/dev/null || true
-    rm -f /usr/local/bin/wireproxy /usr/local/bin/warpwp /usr/local/bin/warp-wireproxy-native.sh
-    rm -rf /etc/wireguard/proxy.conf /etc/wireguard/warp*
+    msg_inf "Installing Cloudflare WARP+..."
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+    $Pak update && $Pak -y install cloudflare-warp
 
-    msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic to native panel WARP..."
-    
-    current_config=$(sqlite3 -batch -noheader -init /dev/null $XUIDB "SELECT value FROM settings WHERE key='xrayTemplateConfig';")
-    if ! echo "$current_config" | jq . >/dev/null 2>&1; then
-        current_config=""
+    warp-cli --accept-tos registration new
+    warp-cli --accept-tos mode proxy
+    warp-cli --accept-tos proxy port 40000
+
+    msg_inf "Fetching Free WARP+ premium key..."
+    WARP_KEY=$(curl -s "https://t.me/s/warpplus" | grep -oE "[a-zA-Z0-9]{8}-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{8}" | tail -n 1)
+    if [[ -n "$WARP_KEY" ]]; then
+        warp-cli --accept-tos account license "$WARP_KEY"
     fi
-    
-    if [ -z "$current_config" ] || [ "$current_config" == "null" ]; then
-        new_config='{
+    warp-cli --accept-tos connect
+    warp-cli --accept-tos enable-always-on
+
+    msg_inf "Downloading optimized roscomvpn geo databases..."
+    wget -O /usr/local/x-ui/bin/geoip.dat "https://github.com/hydraponique/roscomvpn-geoip/releases/latest/download/geoip.dat"
+    wget -O /usr/local/x-ui/bin/geosite.dat "https://github.com/hydraponique/roscomvpn-geosite/releases/latest/download/geosite.dat"
+
+    msg_inf "Configuring global WARP routing in X-UI..."
+    clean_config='{
       "log": { "access": "", "error": "", "loglevel": "warning" },
       "inbounds": [],
       "outbounds": [
         { "tag": "direct", "protocol": "freedom", "settings": {} },
-        { "tag": "blocked", "protocol": "blackhole", "settings": {} }
+        { "tag": "blocked", "protocol": "blackhole", "settings": {} },
+        { "tag": "warp", "protocol": "socks", "settings": { "servers": [{"address": "127.0.0.1", "port": 40000}] } }
       ],
       "routing": {
         "domainStrategy": "AsIs",
         "rules": [
-          { "type": "field", "inboundTag": [ "api" ], "outboundTag": "api" },
-          { "type": "field", "outboundTag": "blocked", "ip": [ "geoip:private" ] },
-          { "type": "field", "outboundTag": "blocked", "protocol": [ "bittorrent" ] },
-          { "type": "field", "outboundTag": "warp", "domain": [
-              "geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
+          { "type": "field", "inboundTag": ["api"], "outboundTag": "api" },
+          { "type": "field", "outboundTag": "blocked", "ip": ["geoip:private"] },
+          { "type": "field", "outboundTag": "blocked", "protocol": ["bittorrent"] },
+          { "type": "field", "network": "udp", "port": "443", "outboundTag": "blocked" },
+          {
+            "type": "field",
+            "outboundTag": "warp",
+            "domain": [
+              "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
               "domain:api.fitbit.com", "domain:fitbit-pa.googleapis.com", "domain:fitbitvestibuleshim-pa.googleapis.com",
               "domain:fitbit.google.com", "domain:gemini.google.com", "domain:aistudio.google.com", "domain:generativelanguage.googleapis.com",
               "domain:aitestkitchen.withgoogle.com", "domain:aisandbox-pa.googleapis.com", "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
               "domain:alkalimakersuite-pa.clients6.google.com", "domain:assistant-s3-pa.googleapis.com", "domain:proactivebackend-pa.googleapis.com",
               "domain:robinfrontend-pa.googleapis.com", "domain:o.pki.goog", "domain:labs.google", "domain:notebooklm.google.com", "domain:jules.google.com",
-              "domain:stitch.withgoogle.com"
-          ] }
+              "domain:stitch.withgoogle.com", "domain:googleapis.com", "domain:accounts.google.com", "domain:aiplatform.googleapis.com",
+              "domain:googleapis.cn", "domain:goog", "domain:antigravity.google.com", "domain:antigravity-unleash.goog", "domain:google.com"
+            ]
+          },
+          { "type": "field", "outboundTag": "direct", "ip": ["geoip:direct"] },
+          { "type": "field", "network": "tcp,udp", "outboundTag": "warp" }
         ]
       }
     }'
-    else
-        new_config=$(echo "$current_config" | jq '
-            .outbounds = [.outbounds[]? | select(.protocol != "socks" or .tag != "warp")] |
-            if .routing == null then .routing = {"domainStrategy": "AsIs", "rules": []} else . end |
-            if .routing.rules == null then .routing.rules = [] else . end |
-            .routing.rules = [.routing.rules[] | select(.outboundTag != "warp")] + 
-            [{"type": "field", "outboundTag": "warp", "domain": [
-              "geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
-              "domain:api.fitbit.com", "domain:fitbit-pa.googleapis.com", "domain:fitbitvestibuleshim-pa.googleapis.com",
-              "domain:fitbit.google.com", "domain:gemini.google.com", "domain:aistudio.google.com", "domain:generativelanguage.googleapis.com",
-              "domain:aitestkitchen.withgoogle.com", "domain:aisandbox-pa.googleapis.com", "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
-              "domain:alkalimakersuite-pa.clients6.google.com", "domain:assistant-s3-pa.googleapis.com", "domain:proactivebackend-pa.googleapis.com",
-              "domain:robinfrontend-pa.googleapis.com", "domain:o.pki.goog", "domain:labs.google", "domain:notebooklm.google.com", "domain:jules.google.com",
-              "domain:stitch.withgoogle.com"
-            ]}]
-        ')
-    fi
     
-    escaped_config=$(echo "$new_config" | sed "s/'/''/g")
+    escaped_config=$(echo "$clean_config" | jq -c . | sed "s/'/''/g")
     sqlite3 -batch -noheader -init /dev/null $XUIDB <<EOF
 DELETE FROM settings WHERE key='xrayTemplateConfig';
 INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${escaped_config}');
 EOF
-    msg_ok "Native WARP routing configuration injected successfully!"
-    msg_inf "IMPORTANT: Go to your 3X-UI Panel -> Outbounds -> Add WARP to actually generate the connection!"
+    msg_ok "WARP+ proxy and optimized AI routing installed successfully!"
 }
-
 ########################################Update X-UI Port/Path for first INSTALL#########################
 UPDATE_XUIDB(){
 if [[ -f $XUIDB ]]; then
@@ -729,15 +731,14 @@ if [[ -f $XUIDB ]]; then
 }',
              'inbound-8443',
 	     '{
-  "enabled": false,
+  "enabled": true,
   "destOverride": [
     "http",
     "tls",
-    "quic",
-    "fakedns"
+    "quic"
   ],
   "metadataOnly": false,
-  "routeOnly": false
+  "routeOnly": true
 }'
 	     );
       INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
@@ -775,15 +776,14 @@ if [[ -f $XUIDB ]]; then
 }',
              'inbound-${ws_port}',
 	     '{
-  "enabled": false,
+  "enabled": true,
   "destOverride": [
     "http",
     "tls",
-    "quic",
-    "fakedns"
+    "quic"
   ],
   "metadataOnly": false,
-  "routeOnly": false
+  "routeOnly": true
 }'
 	     );
 	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
@@ -820,15 +820,14 @@ if [[ -f $XUIDB ]]; then
 }',
 'inbound-${trojan_port}',
 '{
-  "enabled": false,
+  "enabled": true,
   "destOverride": [
     "http",
     "tls",
-    "quic",
-    "fakedns"
+    "quic"
   ],
   "metadataOnly": false,
-  "routeOnly": false
+  "routeOnly": true
 }',
          '1'
 	);
@@ -878,15 +877,14 @@ if [[ -f $XUIDB ]]; then
 }',
 'inbound-${hy2_port}',
 '{
-  "enabled": false,
+  "enabled": true,
   "destOverride": [
     "http",
     "tls",
-    "quic",
-    "fakedns"
+    "quic"
   ],
   "metadataOnly": false,
-  "routeOnly": false
+  "routeOnly": true
 }'
 	     );
 	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
@@ -933,15 +931,14 @@ if [[ -f $XUIDB ]]; then
 }',
 'inbound-${xhttp_port}',
 '{
-  "enabled": false,
+  "enabled": true,
   "destOverride": [
     "http",
     "tls",
-    "quic",
-    "fakedns"
+    "quic"
   ],
   "metadataOnly": false,
-  "routeOnly": false
+  "routeOnly": true
 }'
 	);
 EOF
