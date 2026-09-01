@@ -11,6 +11,7 @@
 - 📦 **Всегда последняя версия панели**: Автоматическое скачивание актуального релиза панели [MHSanaei/3x-ui](https://github.com/MHSanaei/3x-ui).
 - 👤 **Единый клиент (Single Client)**: При первой установке автоматически создается один клиент (`first`) сразу под все протоколы (**VLESS REALITY**, **VLESS WS**, **VLESS XHTTP**, **Trojan gRPC**, **Hysteria 2**).
 - ⚡ **Поддержка Hysteria 2**: Автоматическая настройка протокола Hysteria 2 (UDP/QUIC, TLS ALPN `h3`) с автоматическим открытием портов в UFW.
+- 🤖 **Интеграция Cloudflare WARP**: Встроенный обход блокировок для ИИ-сервисов (OpenAI, ChatGPT, Claude) через локальный SOCKS5-прокси WARP.
 - 🚀 **Поддержка XHTTP**: Автоматическая настройка нового протокола XHTTP для обхода блокировок.
 - 🔒 **Nginx SSL & Snippet Routing**: Маскировка трафика, авто-продление SSL через Certbot, daily reload Nginx.
 - 🌐 **Персональная страница подписки (Web Sub Page)**: Готовая красиво оформленная страница подписки под Sing-Box, Clash Meta и стандартные клиенты.
@@ -45,7 +46,7 @@
 Запустите команду на чистом сервере под пользователем `root`:
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/x-ui-pro.sh) -install yes -panel 1 -ONLY_CF_IP_ALLOW no
+bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/x-ui-pro.sh) -install yes -panel 1 -ONLY_CF_IP_ALLOW no -warp yes
 ```
 
 ### Параметры запуска:
@@ -56,6 +57,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/mas
 | `-ONLY_CF_IP_ALLOW` | `no` | Ограничивать ли доступ к подпискам только IP Cloudflare |
 | `-subdomain` | *(запрашивается)* | Ваш основной домен для панели и SSL |
 | `-reality_domain` | *(запрашивается)* | Домен для REALITY |
+| `-warp` | `no` | Автоматическая установка Cloudflare WARP и настройка обхода блокировок для ИИ-сервисов (OpenAI, Claude и др.) |
 
 ---
 

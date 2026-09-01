@@ -9,7 +9,7 @@ echo;msg_inf '           ___    _   _   _  '	;
 msg_inf		 ' \/ __ | |  | __ |_) |_) / \ '	;
 msg_inf		 ' /\    |_| _|_   |   | \ \_/ '	; echo
 ##################################Variables#############################################################
-XUIDB="/etc/x-ui/x-ui.db";domain="";UNINSTALL="x";INSTALL="n";PNLNUM=1;CFALLOW="n";CLASH=0;CUSTOMWEBSUB=0
+XUIDB="/etc/x-ui/x-ui.db";domain="";UNINSTALL="x";INSTALL="n";PNLNUM=1;CFALLOW="n";CLASH=0;CUSTOMWEBSUB=0;WARP="n"
 Pak=$(type apt &>/dev/null && echo "apt" || echo "yum")
 systemctl stop x-ui 2>/dev/null || true
 rm -rf /etc/systemd/system/x-ui.service
@@ -86,6 +86,7 @@ while [ "$#" -gt 0 ]; do
     -websub) CUSTOMWEBSUB="$2"; shift 2;;
     -clash) CLASH="$2"; shift 2;;
     -uninstall) UNINSTALL="$2"; shift 2;;
+    -warp) WARP="$2"; shift 2;;
     *) shift 1;;
   esac
 done
@@ -515,6 +516,97 @@ sub_uri=https://${domain}/${sub_path}/
 json_uri=https://${domain}/${web_path}?name=
 ##############################generate keys###########################################################
 shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8))
+
+SETUP_WARP(){
+    msg_inf "Installing Cloudflare WARP in SOCKS5 mode for AI Unblock..."
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+    $Pak -y update
+    $Pak -y install cloudflare-warp
+
+    warp-cli --accept-tos registration new
+    warp-cli --accept-tos mode proxy
+    warp-cli --accept-tos proxy port 40000
+    warp-cli --accept-tos connect
+
+    sleep 3
+    msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic via WARP..."
+    
+    # We construct the default template with WARP outbound and routing
+    XRAY_TEMPLATE='{
+  "log": {
+    "access": "",
+    "error": "",
+    "loglevel": "warning"
+  },
+  "inbounds": [],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    },
+    {
+      "tag": "blocked",
+      "protocol": "blackhole",
+      "settings": {}
+    },
+    {
+      "tag": "warp",
+      "protocol": "socks",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": 40000
+          }
+        ]
+      }
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "api"
+        ],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "ip": [
+          "geoip:private"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "protocol": [
+          "bittorrent"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "warp",
+        "domain": [
+          "geosite:openai",
+          "geosite:anthropic",
+          "domain:chatgpt.com",
+          "domain:oaistatic.com",
+          "domain:oaiusercontent.com",
+          "domain:claude.ai"
+        ]
+      }
+    ]
+  }
+}'
+
+    sqlite3 $XUIDB "DELETE FROM settings WHERE key='xrayTemplateConfig';"
+    sqlite3 $XUIDB "INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${XRAY_TEMPLATE}');"
+}
 
 ########################################Update X-UI Port/Path for first INSTALL#########################
 UPDATE_XUIDB(){
@@ -1016,6 +1108,9 @@ if systemctl is-active --quiet x-ui; then
 else
     install_panel	
 	UPDATE_XUIDB
+	if [[ ${WARP} == *"y"* ]]; then
+		SETUP_WARP
+	fi
 	if ! systemctl is-enabled --quiet x-ui; then
 		systemctl daemon-reload && systemctl enable x-ui.service
 	fi
