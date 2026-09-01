@@ -71,7 +71,7 @@ make_port() {
 }
 awg_port=$(make_port)
 
-emoji_flag=$(sqlite3 $XUIDB "SELECT name FROM nodes WHERE id=1;" | tail -n 1 | awk '{print $1}')
+emoji_flag=$(sqlite3 $XUIDB "SELECT remark FROM inbounds LIMIT 1;" | tail -n 1 | awk '{print $1}')
 if [[ -z "$emoji_flag" ]]; then
     emoji_flag="🚀"
 fi
