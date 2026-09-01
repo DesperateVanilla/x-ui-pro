@@ -532,8 +532,16 @@ SETUP_WARP(){
     sleep 3
     msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic via WARP..."
     
+    msg_inf "Downloading and parsing hosts.txt for WARP routing..."
+    wget -qO /tmp/hosts.txt https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/hosts.txt
+    if [ -f "/tmp/hosts.txt" ]; then
+        DOMAIN_ARRAY=$(awk '/^[^#]/ && NF >= 2 {print "domain:"$2}' /tmp/hosts.txt | jq -R . | jq -s .)
+    else
+        DOMAIN_ARRAY="[]"
+    fi
+    
     # We construct the default template with WARP outbound and routing
-    XRAY_TEMPLATE='{
+    XRAY_TEMPLATE=$(jq -n --argjson domains "$DOMAIN_ARRAY" '{
   "log": {
     "access": "",
     "error": "",
@@ -591,21 +599,17 @@ SETUP_WARP(){
       {
         "type": "field",
         "outboundTag": "warp",
-        "domain": [
-          "geosite:openai",
-          "geosite:anthropic",
-          "domain:chatgpt.com",
-          "domain:oaistatic.com",
-          "domain:oaiusercontent.com",
-          "domain:claude.ai"
-        ]
+        "domain": (["geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai"] + $domains | unique)
       }
     ]
   }
-}'
+}')
 
-    sqlite3 $XUIDB "DELETE FROM settings WHERE key='xrayTemplateConfig';"
-    sqlite3 $XUIDB "INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${XRAY_TEMPLATE}');"
+    ESCAPED_TEMPLATE=$(echo "$XRAY_TEMPLATE" | sed "s/'/''/g")
+    sqlite3 $XUIDB <<EOF
+DELETE FROM settings WHERE key='xrayTemplateConfig';
+INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '${ESCAPED_TEMPLATE}');
+EOF
 }
 
 ########################################Update X-UI Port/Path for first INSTALL#########################
