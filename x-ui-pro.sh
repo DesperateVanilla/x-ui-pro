@@ -229,7 +229,46 @@ if [[ -f $XUIDB ]]; then
 if [[ $XUIPORT -gt 0 && $XUIPORT != "54321" && $XUIPORT != "2053" ]] && [[ ${#XUIPORT} -gt 4 ]]; then
 	RNDSTR=$(echo "$XUIPATH" 2>&1 | tr -d '/')
 	PORT=$XUIPORT
-	sqlite3 $XUIDB <<EOF
+	
+  echo -e "\e[1;34m Generating AmneziaWG 3.1 Obfuscation Parameters... \e[0m"
+  obfs=$(python3 -c "
+import os, base64, random
+jc = random.randint(3, 6)
+jmin = random.randint(40, 89)
+jmax = jmin + random.randint(50, 250)
+s1 = random.randint(15, 150)
+s2 = random.randint(15, 150)
+while s1 + 56 == s2: s2 = random.randint(15, 150)
+s3 = random.randint(12, 55)
+s4 = random.randint(12, 27)
+h = []
+lo = 5
+band = (2147483647 - lo + 1) // 4
+for i in range(4):
+    blo = lo + i * band
+    bhi = blo + band - 1
+    start = random.randint(blo, bhi - 100 - 1)
+    h.append(f'{start}-{random.randint(start + 100, bhi - 1)}')
+i1 = f'<r {random.randint(32, 256)}>'
+hpk = base64.b64encode(os.urandom(32)).decode('utf-8')
+cplo = random.randint(8, 24)
+cp = f'{cplo}-{cplo + random.randint(8, 40)}'
+rklo = random.randint(100, 120)
+rkhi = rklo + random.randint(10, 40)
+rka = f'{rklo}-{rkhi}'
+rjlo = rkhi + random.randint(30, 60)
+rja = f'{rjlo}-{rjlo + random.randint(30, 90)}'
+rtlo = random.randint(3, 6)
+rt = f'{rtlo}-{rtlo + random.randint(1, 4)}'
+kalo = random.randint(8, 12)
+ka = f'{kalo}-{kalo + random.randint(2, 8)}'
+halo = random.randint(15, 25)
+mha = f'{halo}-{halo + random.randint(5, 25)}'
+print(f'{jc}|{jmin}|{jmax}|{s1}|{s2}|{s3}|{s4}|{h[0]}|{h[1]}|{h[2]}|{h[3]}|{i1}|{hpk}|{cp}|{rka}|{rja}|{rt}|{ka}|{mha}')
+")
+  IFS='|' read -r o_jc o_jmin o_jmax o_s1 o_s2 o_s3 o_s4 o_h1 o_h2 o_h3 o_h4 o_i1 o_hpk o_cp o_rka o_rja o_rt o_ka o_mha <<< "$obfs"
+
+sqlite3 $XUIDB <<EOF
 	DELETE FROM "settings" WHERE ( "key"="webCertFile" ) OR ( "key"="webKeyFile" ); 
 	INSERT INTO "settings" ("key", "value") VALUES ("webCertFile",  "");
 	INSERT INTO "settings" ("key", "value") VALUES ("webKeyFile", "");
@@ -621,7 +660,46 @@ if [[ -f $XUIDB ]]; then
         emoji_flag=$(echo "$ip_info" | jq -r '.flag.emoji')
         country=$(echo "$ip_info" | jq -r '.country')
         node_name="${emoji_flag} ${country}"
-       	sqlite3 $XUIDB <<EOF
+       	
+  echo -e "\e[1;34m Generating AmneziaWG 3.1 Obfuscation Parameters... \e[0m"
+  obfs=$(python3 -c "
+import os, base64, random
+jc = random.randint(3, 6)
+jmin = random.randint(40, 89)
+jmax = jmin + random.randint(50, 250)
+s1 = random.randint(15, 150)
+s2 = random.randint(15, 150)
+while s1 + 56 == s2: s2 = random.randint(15, 150)
+s3 = random.randint(12, 55)
+s4 = random.randint(12, 27)
+h = []
+lo = 5
+band = (2147483647 - lo + 1) // 4
+for i in range(4):
+    blo = lo + i * band
+    bhi = blo + band - 1
+    start = random.randint(blo, bhi - 100 - 1)
+    h.append(f'{start}-{random.randint(start + 100, bhi - 1)}')
+i1 = f'<r {random.randint(32, 256)}>'
+hpk = base64.b64encode(os.urandom(32)).decode('utf-8')
+cplo = random.randint(8, 24)
+cp = f'{cplo}-{cplo + random.randint(8, 40)}'
+rklo = random.randint(100, 120)
+rkhi = rklo + random.randint(10, 40)
+rka = f'{rklo}-{rkhi}'
+rjlo = rkhi + random.randint(30, 60)
+rja = f'{rjlo}-{rjlo + random.randint(30, 90)}'
+rtlo = random.randint(3, 6)
+rt = f'{rtlo}-{rtlo + random.randint(1, 4)}'
+kalo = random.randint(8, 12)
+ka = f'{kalo}-{kalo + random.randint(2, 8)}'
+halo = random.randint(15, 25)
+mha = f'{halo}-{halo + random.randint(5, 25)}'
+print(f'{jc}|{jmin}|{jmax}|{s1}|{s2}|{s3}|{s4}|{h[0]}|{h[1]}|{h[2]}|{h[3]}|{i1}|{hpk}|{cp}|{rka}|{rja}|{rt}|{ka}|{mha}')
+")
+  IFS='|' read -r o_jc o_jmin o_jmax o_s1 o_s2 o_s3 o_s4 o_h1 o_h2 o_h3 o_h4 o_i1 o_hpk o_cp o_rka o_rja o_rt o_ka o_mha <<< "$obfs"
+
+sqlite3 $XUIDB <<EOF
              DELETE FROM "inbounds";
              DELETE FROM "clients";
              DELETE FROM "client_inbounds";
