@@ -83,10 +83,10 @@ fi
 
 echo -e "\e[1;34m Generating AmneziaWG keys... \e[0m"
 awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
-server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}')
+server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
 if [[ -z "$server_pub" ]]; then
-    server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}')
+    server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
 fi
 
 next_inbound_id=$(sqlite3 $XUIDB "SELECT COALESCE(MAX(id),0) + 1 FROM inbounds;" | tail -n 1 | awk '{print $1}')
@@ -105,10 +105,10 @@ fi
 awg_ip_counter=2
 for cid in $client_ids; do
     client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-    cpriv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
-    cpub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
+    cpriv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+    cpub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
     if [[ -z "$cpub" ]]; then
-        cpub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}')
+        cpub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
     fi
     allowed_ip="10.0.0.${awg_ip_counter}/32"
     

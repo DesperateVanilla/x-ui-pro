@@ -601,7 +601,7 @@ if [[ -f $XUIDB ]]; then
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
         
         awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
+        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
         client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
         client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
         client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
@@ -610,7 +610,7 @@ if [[ -f $XUIDB ]]; then
         fi
         
         awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}')
+        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
         client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
         client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
         client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
