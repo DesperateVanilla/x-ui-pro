@@ -532,16 +532,8 @@ SETUP_WARP(){
     sleep 3
     msg_inf "Configuring x-ui to route OpenAI & Anthropic traffic via WARP..."
     
-    msg_inf "Downloading and parsing hosts.txt for WARP routing..."
-    wget -qO /tmp/hosts.txt https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/hosts.txt
-    if [ -f "/tmp/hosts.txt" ]; then
-        DOMAIN_ARRAY=$(awk '/^[^#]/ && NF >= 2 {print "domain:"$2}' /tmp/hosts.txt | jq -R . | jq -s .)
-    else
-        DOMAIN_ARRAY="[]"
-    fi
-    
     # We construct the default template with WARP outbound and routing
-    XRAY_TEMPLATE=$(jq -n --argjson domains "$DOMAIN_ARRAY" '{
+    XRAY_TEMPLATE='{
   "log": {
     "access": "",
     "error": "",
@@ -599,11 +591,37 @@ SETUP_WARP(){
       {
         "type": "field",
         "outboundTag": "warp",
-        "domain": (["geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai"] + $domains | unique)
+        "domain": [
+          "geosite:openai",
+          "geosite:anthropic",
+          "domain:chatgpt.com",
+          "domain:oaistatic.com",
+          "domain:oaiusercontent.com",
+          "domain:claude.ai",
+          "domain:api.fitbit.com",
+          "domain:fitbit-pa.googleapis.com",
+          "domain:fitbitvestibuleshim-pa.googleapis.com",
+          "domain:fitbit.google.com",
+          "domain:gemini.google.com",
+          "domain:aistudio.google.com",
+          "domain:generativelanguage.googleapis.com",
+          "domain:aitestkitchen.withgoogle.com",
+          "domain:aisandbox-pa.googleapis.com",
+          "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
+          "domain:alkalimakersuite-pa.clients6.google.com",
+          "domain:assistant-s3-pa.googleapis.com",
+          "domain:proactivebackend-pa.googleapis.com",
+          "domain:robinfrontend-pa.googleapis.com",
+          "domain:o.pki.goog",
+          "domain:labs.google",
+          "domain:notebooklm.google.com",
+          "domain:jules.google.com",
+          "domain:stitch.withgoogle.com"
+        ]
       }
     ]
   }
-}')
+}'
 
     ESCAPED_TEMPLATE=$(echo "$XRAY_TEMPLATE" | sed "s/'/''/g")
     sqlite3 $XUIDB <<EOF

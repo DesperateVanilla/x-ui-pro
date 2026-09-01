@@ -36,20 +36,12 @@ warp-cli --accept-tos connect
 sleep 3
 warp-cli --accept-tos status
 
-msg_inf "Downloading and parsing hosts.txt for WARP routing..."
-wget -qO /tmp/hosts.txt https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/hosts.txt
-if [ -f "/tmp/hosts.txt" ]; then
-    DOMAIN_ARRAY=$(awk '/^[^#]/ && NF >= 2 {print "domain:"$2}' /tmp/hosts.txt | jq -R . | jq -s .)
-else
-    DOMAIN_ARRAY="[]"
-fi
-
 msg_inf "Injecting WARP Outbound and Routing into x-ui database..."
 current_config=$(sqlite3 $XUIDB "SELECT value FROM settings WHERE key='xrayTemplateConfig';")
 
 if [ -z "$current_config" ] || [ "$current_config" == "null" ]; then
     msg_inf "No custom xrayTemplateConfig found. Generating default with WARP..."
-    new_config=$(jq -n --argjson domains "$DOMAIN_ARRAY" '{
+    new_config='{
   "log": { "access": "", "error": "", "loglevel": "warning" },
   "inbounds": [],
   "outbounds": [
@@ -63,10 +55,18 @@ if [ -z "$current_config" ] || [ "$current_config" == "null" ]; then
       { "type": "field", "inboundTag": [ "api" ], "outboundTag": "api" },
       { "type": "field", "outboundTag": "blocked", "ip": [ "geoip:private" ] },
       { "type": "field", "outboundTag": "blocked", "protocol": [ "bittorrent" ] },
-      { "type": "field", "outboundTag": "warp", "domain": (["geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai"] + $domains | unique) }
+      { "type": "field", "outboundTag": "warp", "domain": [
+          "geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
+          "domain:api.fitbit.com", "domain:fitbit-pa.googleapis.com", "domain:fitbitvestibuleshim-pa.googleapis.com",
+          "domain:fitbit.google.com", "domain:gemini.google.com", "domain:aistudio.google.com", "domain:generativelanguage.googleapis.com",
+          "domain:aitestkitchen.withgoogle.com", "domain:aisandbox-pa.googleapis.com", "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
+          "domain:alkalimakersuite-pa.clients6.google.com", "domain:assistant-s3-pa.googleapis.com", "domain:proactivebackend-pa.googleapis.com",
+          "domain:robinfrontend-pa.googleapis.com", "domain:o.pki.goog", "domain:labs.google", "domain:notebooklm.google.com", "domain:jules.google.com",
+          "domain:stitch.withgoogle.com"
+      ] }
     ]
   }
-}')
+}'
 else
     msg_inf "Found existing xrayTemplateConfig. Updating via jq..."
     
@@ -77,11 +77,19 @@ else
     fi
     
     # Add or replace the warp routing rule
-    new_config=$(echo "$current_config" | jq --argjson domains "$DOMAIN_ARRAY" '
+    new_config=$(echo "$current_config" | jq '
         if .routing == null then .routing = {"domainStrategy": "AsIs", "rules": []} else . end |
         if .routing.rules == null then .routing.rules = [] else . end |
         .routing.rules = [.routing.rules[] | select(.outboundTag != "warp")] + 
-        [{"type": "field", "outboundTag": "warp", "domain": (["geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai"] + $domains | unique)}]
+        [{"type": "field", "outboundTag": "warp", "domain": [
+          "geosite:openai", "geosite:anthropic", "domain:chatgpt.com", "domain:oaistatic.com", "domain:oaiusercontent.com", "domain:claude.ai",
+          "domain:api.fitbit.com", "domain:fitbit-pa.googleapis.com", "domain:fitbitvestibuleshim-pa.googleapis.com",
+          "domain:fitbit.google.com", "domain:gemini.google.com", "domain:aistudio.google.com", "domain:generativelanguage.googleapis.com",
+          "domain:aitestkitchen.withgoogle.com", "domain:aisandbox-pa.googleapis.com", "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
+          "domain:alkalimakersuite-pa.clients6.google.com", "domain:assistant-s3-pa.googleapis.com", "domain:proactivebackend-pa.googleapis.com",
+          "domain:robinfrontend-pa.googleapis.com", "domain:o.pki.goog", "domain:labs.google", "domain:notebooklm.google.com", "domain:jules.google.com",
+          "domain:stitch.withgoogle.com"
+        ]}]
     ')
 fi
 
