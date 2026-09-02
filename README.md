@@ -47,7 +47,7 @@
 Запустите команду на чистом сервере под пользователем `root`:
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/x-ui-pro.sh) -install yes -panel 1 -ONLY_CF_IP_ALLOW no -warp yes
+bash <(wget -qO- https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/x-ui-pro.sh) -install yes -panel 1 -ONLY_CF_IP_ALLOW no
 ```
 
 ### Параметры запуска:
