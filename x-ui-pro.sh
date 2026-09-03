@@ -1,6 +1,6 @@
 #!/bin/bash
 #################### x-ui-pro v2.4.3 @ github.com/GFW4Fun ##############################################
-[[ $EUID -ne 0 ]] && echo "not root!" && sudo su -
+[[ $EUID -ne 0 ]] && msg_err "Error: Please run as root (sudo)" && exit 1
 ##############################INFO######################################################################
 msg_ok() { echo -e "\e[1;42m $1 \e[0m";}
 msg_err() { echo -e "\e[1;41m $1 \e[0m";}
@@ -229,46 +229,7 @@ if [[ -f $XUIDB ]]; then
 if [[ $XUIPORT -gt 0 && $XUIPORT != "54321" && $XUIPORT != "2053" ]] && [[ ${#XUIPORT} -gt 4 ]]; then
 	RNDSTR=$(echo "$XUIPATH" 2>&1 | tr -d '/')
 	PORT=$XUIPORT
-	
-  echo -e "\e[1;34m Generating AmneziaWG 3.1 Obfuscation Parameters... \e[0m"
-  obfs=$(python3 -c "
-import os, base64, random
-jc = random.randint(3, 6)
-jmin = random.randint(40, 89)
-jmax = jmin + random.randint(50, 250)
-s1 = random.randint(15, 150)
-s2 = random.randint(15, 150)
-while s1 + 56 == s2: s2 = random.randint(15, 150)
-s3 = random.randint(12, 55)
-s4 = random.randint(12, 27)
-h = []
-lo = 5
-band = (2147483647 - lo + 1) // 4
-for i in range(4):
-    blo = lo + i * band
-    bhi = blo + band - 1
-    start = random.randint(blo, bhi - 100 - 1)
-    h.append(f'{start}-{random.randint(start + 100, bhi - 1)}')
-i1 = f'<r {random.randint(32, 256)}>'
-hpk = base64.b64encode(os.urandom(32)).decode('utf-8')
-cplo = random.randint(8, 24)
-cp = f'{cplo}-{cplo + random.randint(8, 40)}'
-rklo = random.randint(100, 120)
-rkhi = rklo + random.randint(10, 40)
-rka = f'{rklo}-{rkhi}'
-rjlo = rkhi + random.randint(30, 60)
-rja = f'{rjlo}-{rjlo + random.randint(30, 90)}'
-rtlo = random.randint(3, 6)
-rt = f'{rtlo}-{rtlo + random.randint(1, 4)}'
-kalo = random.randint(8, 12)
-ka = f'{kalo}-{kalo + random.randint(2, 8)}'
-halo = random.randint(15, 25)
-mha = f'{halo}-{halo + random.randint(5, 25)}'
-print(f'{jc}|{jmin}|{jmax}|{s1}|{s2}|{s3}|{s4}|{h[0]}|{h[1]}|{h[2]}|{h[3]}|{i1}|{hpk}|{cp}|{rka}|{rja}|{rt}|{ka}|{mha}')
-")
-  IFS='|' read -r o_jc o_jmin o_jmax o_s1 o_s2 o_s3 o_s4 o_h1 o_h2 o_h3 o_h4 o_i1 o_hpk o_cp o_rka o_rja o_rt o_ka o_mha <<< "$obfs"
-
-sqlite3 $XUIDB <<EOF
+	sqlite3 $XUIDB <<EOF
 	DELETE FROM "settings" WHERE ( "key"="webCertFile" ) OR ( "key"="webKeyFile" ); 
 	INSERT INTO "settings" ("key", "value") VALUES ("webCertFile",  "");
 	INSERT INTO "settings" ("key", "value") VALUES ("webKeyFile", "");
@@ -650,11 +611,23 @@ if [[ -f $XUIDB ]]; then
         
         awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
         server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        if [[ -z "$server_pub" ]]; then
+            server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        fi
+        if [[ ${#server_priv} -ne 44 ]]; then
+            server_priv=""
+            server_pub=""
+        fi
         client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
-        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
+        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
         if [[ -z "$client_pub" ]]; then
-            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}')
+            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        fi
+        if [[ ${#client_priv} -ne 44 ]]; then
+            client_priv=""
+            client_pub=""
         fi
         ip_info=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/)
         emoji_flag=$(echo "$ip_info" | jq -r '.flag.emoji')
@@ -756,7 +729,7 @@ sqlite3 $XUIDB <<EOF
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('5','1','first','0','0','0','0','0');
 	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('6','1','first','0','0','0','0','0');
-             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at", "wg_private_key", "wg_public_key", "wg_allowed_ips") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000, '${client_priv}', '${client_pub}', '10.0.0.2/32');
+             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at", "wg_private_key", "wg_public_key", "wg_allowed_ips") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000, '${client_priv}', '${client_pub}', '10.8.1.2/32');
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);

@@ -1,5 +1,5 @@
 #!/bin/bash
-[[ $EUID -ne 0 ]] && echo "not root!" && sudo su -
+[[ $EUID -ne 0 ]] && echo -e "\e[1;41m Error: Please run as root (sudo) \e[0m" && exit 1
 
 XUIDB="/etc/x-ui/x-ui.db"
 
@@ -110,6 +110,10 @@ server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 
 if [[ -z "$server_pub" ]]; then
     server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
 fi
+if [[ ${#server_priv} -ne 44 ]]; then
+    server_priv=""
+    server_pub=""
+fi
 
 next_inbound_id=$(sqlite3 $XUIDB "SELECT COALESCE(MAX(id),0) + 1 FROM inbounds;" | tail -n 1 | awk '{print $1}')
 created_at=$(date +%s000)
@@ -132,7 +136,11 @@ for cid in $client_ids; do
     if [[ -z "$cpub" ]]; then
         cpub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
     fi
-    allowed_ip="10.0.0.${awg_ip_counter}/32"
+    if [[ ${#cpriv} -ne 44 ]]; then
+        cpriv=""
+        cpub=""
+    fi
+    allowed_ip="10.8.1.${awg_ip_counter}/32"
     
     sqlite3 $XUIDB "UPDATE clients SET wg_private_key='${cpriv}', wg_public_key='${cpub}', wg_allowed_ips='${allowed_ip}' WHERE id=${cid};"
     ((awg_ip_counter++))
