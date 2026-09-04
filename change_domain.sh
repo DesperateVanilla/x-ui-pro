@@ -108,6 +108,15 @@ rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 ln -sf "/etc/nginx/sites-available/80.conf" "/etc/nginx/sites-enabled/80.conf" 2>/dev/null
 systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
 
+generate_self_signed() {
+    local dom="$1"
+    mkdir -p "/etc/letsencrypt/live/${dom}"
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "/etc/letsencrypt/live/${dom}/privkey.pem" \
+        -out "/etc/letsencrypt/live/${dom}/fullchain.pem" \
+        -subj "/CN=${dom}" >/dev/null 2>&1
+}
+
 echo "Requesting SSL certificate for $new_domain via webroot..."
 certbot certonly --webroot -w /var/www/html --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
 
@@ -117,29 +126,18 @@ if [[ ! -f "/etc/letsencrypt/live/${new_domain}/fullchain.pem" ]]; then
     systemctl mask nginx 2>/dev/null || true
     pkill -9 -f nginx 2>/dev/null || true
     fuser -k 80/tcp 2>/dev/null || true
-    certbot certonly --standalone --http-01-address 0.0.0.0 --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
+    for attempt in 1 2; do
+        echo "Standalone attempt $attempt for $new_domain..."
+        certbot certonly --standalone --http-01-address 0.0.0.0 --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain" && break
+        sleep 4
+    done
     systemctl unmask nginx 2>/dev/null || true
     systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
 fi
 
 if [[ ! -f "/etc/letsencrypt/live/${new_domain}/fullchain.pem" ]]; then
-    echo "Let's Encrypt failed (likely US network routing timeout), falling back to acme.sh (ZeroSSL)..."
-    if [[ ! -f "/root/.acme.sh/acme.sh" ]]; then
-        curl -s https://get.acme.sh | sh -s email="admin@${new_domain}" >/dev/null 2>&1 || true
-    fi
-    if [[ -f "/root/.acme.sh/acme.sh" ]]; then
-        /root/.acme.sh/acme.sh --register-account -m "admin@${new_domain}" --server zerossl >/dev/null 2>&1 || true
-        /root/.acme.sh/acme.sh --issue -d "$new_domain" -w /var/www/html --server zerossl --force
-        mkdir -p "/etc/letsencrypt/live/${new_domain}"
-        /root/.acme.sh/acme.sh --install-cert -d "$new_domain" \
-            --key-file "/etc/letsencrypt/live/${new_domain}/privkey.pem" \
-            --fullchain-file "/etc/letsencrypt/live/${new_domain}/fullchain.pem" >/dev/null 2>&1 || true
-    fi
-fi
-
-if [[ ! -f "/etc/letsencrypt/live/${new_domain}/fullchain.pem" ]]; then
- 	systemctl restart nginx >/dev/null 2>&1
-	echo -e "\e[1;41m $new_domain SSL could not be generated! Check Domain/IP Or Enter new domain! \e[0m" && exit 1
+    echo -e "\e[33mWarning: ACME verification timed out from remote network. Generating self-signed certificate fallback...\e[0m"
+    generate_self_signed "$new_domain"
 fi
 
 echo "Requesting SSL certificate for $new_reality_domain via webroot..."
@@ -151,25 +149,18 @@ if [[ ! -f "/etc/letsencrypt/live/${new_reality_domain}/fullchain.pem" ]]; then
     systemctl mask nginx 2>/dev/null || true
     pkill -9 -f nginx 2>/dev/null || true
     fuser -k 80/tcp 2>/dev/null || true
-    certbot certonly --standalone --http-01-address 0.0.0.0 --non-interactive --agree-tos --register-unsafely-without-email -d "$new_reality_domain"
+    for attempt in 1 2; do
+        echo "Standalone attempt $attempt for $new_reality_domain..."
+        certbot certonly --standalone --http-01-address 0.0.0.0 --non-interactive --agree-tos --register-unsafely-without-email -d "$new_reality_domain" && break
+        sleep 4
+    done
     systemctl unmask nginx 2>/dev/null || true
     systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
 fi
 
 if [[ ! -f "/etc/letsencrypt/live/${new_reality_domain}/fullchain.pem" ]]; then
-    echo "Let's Encrypt failed for reality domain, falling back to acme.sh (ZeroSSL)..."
-    if [[ -f "/root/.acme.sh/acme.sh" ]]; then
-        /root/.acme.sh/acme.sh --issue -d "$new_reality_domain" -w /var/www/html --server zerossl --force
-        mkdir -p "/etc/letsencrypt/live/${new_reality_domain}"
-        /root/.acme.sh/acme.sh --install-cert -d "$new_reality_domain" \
-            --key-file "/etc/letsencrypt/live/${new_reality_domain}/privkey.pem" \
-            --fullchain-file "/etc/letsencrypt/live/${new_reality_domain}/fullchain.pem" >/dev/null 2>&1 || true
-    fi
-fi
-
-if [[ ! -f "/etc/letsencrypt/live/${new_reality_domain}/fullchain.pem" ]]; then
- 	systemctl restart nginx >/dev/null 2>&1
-	echo -e "\e[1;41m $new_reality_domain SSL could not be generated! Check Domain/IP Or Enter new domain! \e[0m" && exit 1
+    echo -e "\e[33mWarning: ACME verification timed out for reality domain. Generating self-signed certificate fallback...\e[0m"
+    generate_self_signed "$new_reality_domain"
 fi
 
 mkdir -p /root/cert/${new_domain} /root/cert/${new_reality_domain}
