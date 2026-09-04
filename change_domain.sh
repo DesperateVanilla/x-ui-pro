@@ -71,18 +71,32 @@ if [[ -z "$old_domain" || -z "$old_reality_domain" ]]; then
     exit 1
 fi
 
+export LC_ALL=C
+export LANG=C
+
 echo "Old Domain: $old_domain -> New Domain: $new_domain"
 echo "Old Reality Domain: $old_reality_domain -> New Reality Domain: $new_reality_domain"
 
 # Generate new SSL certs
 systemctl stop nginx
+pkill -9 -f nginx 2>/dev/null || true
 fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null || true
-killall -9 nginx 2>/dev/null || true
+
+# Direct iptables rule to bypass any custom drop/reject rules
+iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
+iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
 
 ufw_was_active=false
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-    ufw_was_active=true
-    ufw disable >/dev/null 2>&1
+if command -v ufw >/dev/null 2>&1; then
+    if ufw status 2>/dev/null | grep -qi "active"; then
+        ufw_was_active=true
+        ufw disable >/dev/null 2>&1
+    fi
+fi
+
+if ss -tlpn 2>/dev/null | grep -q ':80 '; then
+    echo -e "\e[33mWarning: Port 80 is currently occupied by:\e[0m"
+    ss -tlpn | grep ':80 '
 fi
 
 certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
