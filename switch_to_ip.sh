@@ -139,10 +139,8 @@ mkdir -p /etc/nginx/stream-enabled
 cat > "$STREAM_CONF" << EOF
 map \$ssl_preread_server_name \$sni_name {
     hostnames;
-    ${IP4}                 www;
-    ""                     www;
     ${reality_sni}         xray;
-    default                xray;
+    default                www;
 }
 
 upstream xray {
@@ -338,18 +336,16 @@ if [[ -f "$XUIDB" ]]; then
     # Update Reality target to real external server for genuine probe responses
     sqlite3 "$XUIDB" "UPDATE inbounds SET stream_settings = REPLACE(stream_settings, '127.0.0.1:9443', '${reality_target}') WHERE protocol='vless' AND stream_settings LIKE '%reality%';" 2>/dev/null || true
 
-    # Update Panel and Sub settings
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '/root/cert/${IP4}/fullchain.pem' WHERE key = 'webCertFile';" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '/root/cert/${IP4}/privkey.pem' WHERE key = 'webKeyFile';" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key = 'webDomain';" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key = 'subDomain';" 2>/dev/null || true
+    # 3X-UI backend panel runs in plain HTTP on 127.0.0.1 (Nginx handles SSL on frontend 443/7443)
+    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key IN ('webCertFile', 'webKeyFile', 'webDomain', 'subDomain', 'webListen');" 2>/dev/null || true
     sqlite3 "$XUIDB" "UPDATE settings SET value = 'https://${IP4}/${sub_path}/' WHERE key = 'subURI';" 2>/dev/null || true
     sqlite3 "$XUIDB" "UPDATE settings SET value = 'https://${IP4}/${web_path}?name=' WHERE key = 'subJsonURI';" 2>/dev/null || true
 fi
 
-# Update x-ui CLI certificate references
+# Reset 3X-UI internal certificate references so it does not reject local Nginx reverse proxy
 if [[ -f "/usr/local/x-ui/x-ui" ]]; then
-    /usr/local/x-ui/x-ui cert -webCert "/root/cert/${IP4}/fullchain.pem" -webCertKey "/root/cert/${IP4}/privkey.pem" >/dev/null 2>&1 || true
+    /usr/local/x-ui/x-ui cert -webCert "" -webCertKey "" >/dev/null 2>&1 || true
+    /usr/local/x-ui/x-ui setting -webListen "" >/dev/null 2>&1 || true
 fi
 
 # Remove obsolete certbot renew cron jobs to avoid errors
@@ -357,12 +353,15 @@ crontab -l 2>/dev/null | grep -v "certbot renew" | crontab - 2>/dev/null || true
 
 # Restart services
 echo "Restarting Nginx and X-UI..."
+pkill -9 -f nginx 2>/dev/null || true
+fuser -k 80/tcp 443/tcp 7443/tcp 9443/tcp 2>/dev/null || true
+
 if nginx -t 2>&1 | grep -q 'successful'; then
-    systemctl restart nginx
+    systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
 else
     echo -e "\e[1;41m Warning: Nginx syntax test failed! \e[0m"
     nginx -t
-    systemctl restart nginx || true
+    systemctl restart nginx 2>/dev/null || true
 fi
 
 x-ui restart 2>/dev/null || systemctl restart x-ui 2>/dev/null || true
