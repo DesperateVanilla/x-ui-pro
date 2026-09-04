@@ -277,11 +277,22 @@ grep -qR "ngx_stream_module" /etc/nginx/ || sed -i '1s/^/load_module \/usr\/lib\
 grep -qR "ngx_stream_geoip2_module" /etc/nginx/ || sed -i '2s/^/load_module \/usr\/lib\/nginx\/modules\/ngx_stream_geoip2_module.so;\n/' /etc/nginx/nginx.conf
 grep -xqFR "worker_rlimit_nofile 16384;" /etc/nginx/* ||echo "worker_rlimit_nofile 16384;" >> /etc/nginx/nginx.conf
 sed -i "/worker_connections/c\worker_connections 4096;" /etc/nginx/nginx.conf
+mkdir -p /var/www/html/.well-known/acme-challenge
+chmod -R 755 /var/www/html
 cat > "/etc/nginx/sites-available/80.conf" << EOF
 server {
-    listen 80;
-    server_name ${domain} ${reality_domain};
-    return 301 https://\$host\$request_uri;
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type text/plain;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 EOF
 

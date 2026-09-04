@@ -77,67 +77,91 @@ export LANG=C
 echo "Old Domain: $old_domain -> New Domain: $new_domain"
 echo "Old Reality Domain: $old_reality_domain -> New Reality Domain: $new_reality_domain"
 
-# Generate new SSL certs
-systemctl stop nginx
-pkill -9 -f nginx 2>/dev/null || true
-fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null || true
-
-# Direct iptables rule to bypass any custom drop/reject rules
+# Direct iptables rule to ensure port 80 and 443 are open
 iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
 iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
+command -v ufw >/dev/null 2>&1 && ufw allow 80/tcp >/dev/null 2>&1 || true
+command -v ufw >/dev/null 2>&1 && ufw allow 443/tcp >/dev/null 2>&1 || true
 
-ufw_was_active=false
-if command -v ufw >/dev/null 2>&1; then
-    if ufw status 2>/dev/null | grep -qi "active"; then
-        ufw_was_active=true
-        ufw disable >/dev/null 2>&1
-    fi
-fi
+# Prepare ACME challenge directory
+mkdir -p /var/www/html/.well-known/acme-challenge
+chmod -R 755 /var/www/html
 
-if ss -tlpn 2>/dev/null | grep -q ':80 '; then
-    echo -e "\e[33mWarning: Port 80 is currently occupied by:\e[0m"
-    ss -tlpn | grep ':80 '
-fi
+# Configure 80.conf to serve ACME challenges locally without redirecting to HTTPS
+cat > "/etc/nginx/sites-available/80.conf" << 'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
 
-certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type text/plain;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+EOF
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+ln -sf "/etc/nginx/sites-available/80.conf" "/etc/nginx/sites-enabled/80.conf" 2>/dev/null
+systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
+
+echo "Requesting SSL certificate for $new_domain via webroot..."
+certbot certonly --webroot -w /var/www/html --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
+
 if [[ ! -d "/etc/letsencrypt/live/${new_domain}/" ]]; then
-    [[ "$ufw_was_active" == true ]] && ufw --force enable >/dev/null 2>&1
- 	systemctl start nginx >/dev/null 2>&1
+    echo "Webroot challenge failed, attempting standalone fallback..."
+    systemctl stop nginx 2>/dev/null || true
+    systemctl mask nginx 2>/dev/null || true
+    pkill -9 -f nginx 2>/dev/null || true
+    fuser -k 80/tcp 2>/dev/null || true
+    certbot certonly --standalone --http-01-address 0.0.0.0 --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
+    systemctl unmask nginx 2>/dev/null || true
+    systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
+fi
+
+if [[ ! -d "/etc/letsencrypt/live/${new_domain}/" ]]; then
+ 	systemctl restart nginx >/dev/null 2>&1
 	echo -e "\e[1;41m $new_domain SSL could not be generated! Check Domain/IP Or Enter new domain! \e[0m" && exit 1
 fi
 
-certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$new_reality_domain"
+echo "Requesting SSL certificate for $new_reality_domain via webroot..."
+certbot certonly --webroot -w /var/www/html --non-interactive --agree-tos --register-unsafely-without-email -d "$new_reality_domain"
+
 if [[ ! -d "/etc/letsencrypt/live/${new_reality_domain}/" ]]; then
-    [[ "$ufw_was_active" == true ]] && ufw --force enable >/dev/null 2>&1
- 	systemctl start nginx >/dev/null 2>&1
+    echo "Webroot challenge failed for reality domain, attempting standalone fallback..."
+    systemctl stop nginx 2>/dev/null || true
+    systemctl mask nginx 2>/dev/null || true
+    pkill -9 -f nginx 2>/dev/null || true
+    fuser -k 80/tcp 2>/dev/null || true
+    certbot certonly --standalone --http-01-address 0.0.0.0 --non-interactive --agree-tos --register-unsafely-without-email -d "$new_reality_domain"
+    systemctl unmask nginx 2>/dev/null || true
+    systemctl restart nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
+fi
+
+if [[ ! -d "/etc/letsencrypt/live/${new_reality_domain}/" ]]; then
+ 	systemctl restart nginx >/dev/null 2>&1
 	echo -e "\e[1;41m $new_reality_domain SSL could not be generated! Check Domain/IP Or Enter new domain! \e[0m" && exit 1
 fi
 
-if [[ "$ufw_was_active" == true ]]; then
-    ufw allow 80/tcp >/dev/null 2>&1
-    ufw allow 443/tcp >/dev/null 2>&1
-    ufw --force enable >/dev/null 2>&1
-fi
-
-mkdir -p /root/cert/${new_domain}
+mkdir -p /root/cert/${new_domain} /root/cert/${new_reality_domain}
 chmod 755 /root/cert/*
 ln -sf /etc/letsencrypt/live/${new_domain}/fullchain.pem /root/cert/${new_domain}/fullchain.pem
 ln -sf /etc/letsencrypt/live/${new_domain}/privkey.pem /root/cert/${new_domain}/privkey.pem
+ln -sf /etc/letsencrypt/live/${new_reality_domain}/fullchain.pem /root/cert/${new_reality_domain}/fullchain.pem
+ln -sf /etc/letsencrypt/live/${new_reality_domain}/privkey.pem /root/cert/${new_reality_domain}/privkey.pem
 
-# Replace domains in nginx (reality first, then main domain to prevent substring collisions)
-sed -i "s/$old_reality_domain/$new_reality_domain/g" "$STREAM_CONF"
-sed -i "s/$old_domain/$new_domain/g" "$STREAM_CONF"
+# Replace domains in nginx stream.conf
+sed -i -E "s/^[[:space:]]*${old_reality_domain}[[:space:]]+xray;/${new_reality_domain}      xray;/g" "$STREAM_CONF"
+sed -i -E "s/^[[:space:]]*${old_domain}[[:space:]]+www;/${new_domain}           www;/g" "$STREAM_CONF"
 
-if [[ -f "/etc/nginx/sites-available/$old_domain" ]]; then
-    mv "/etc/nginx/sites-available/$old_domain" "/etc/nginx/sites-available/$new_domain"
+if [[ -f "/etc/nginx/sites-available/$old_domain" && "$old_domain" != "$new_domain" ]]; then
+    mv -f "/etc/nginx/sites-available/$old_domain" "/etc/nginx/sites-available/$new_domain"
 fi
-if [[ -f "/etc/nginx/sites-available/$old_reality_domain" ]]; then
-    mv "/etc/nginx/sites-available/$old_reality_domain" "/etc/nginx/sites-available/$new_reality_domain"
-fi
-
-if [[ -f "/etc/nginx/sites-available/80.conf" ]]; then
-    sed -i "s/$old_reality_domain/$new_reality_domain/g" /etc/nginx/sites-available/80.conf
-    sed -i "s/$old_domain/$new_domain/g" /etc/nginx/sites-available/80.conf
+if [[ -f "/etc/nginx/sites-available/$old_reality_domain" && "$old_reality_domain" != "$new_reality_domain" ]]; then
+    mv -f "/etc/nginx/sites-available/$old_reality_domain" "/etc/nginx/sites-available/$new_reality_domain"
 fi
 
 if [[ -f "/etc/nginx/sites-available/$new_domain" ]]; then
@@ -151,31 +175,36 @@ if [[ -f "/etc/nginx/sites-available/$new_reality_domain" ]]; then
 fi
 
 # Re-link nginx
-rm -f "/etc/nginx/sites-enabled/$old_domain" "/etc/nginx/sites-enabled/$old_reality_domain"
-ln -sf "/etc/nginx/sites-available/${new_domain}" "/etc/nginx/sites-enabled/"
-ln -sf "/etc/nginx/sites-available/${new_reality_domain}" "/etc/nginx/sites-enabled/"
+rm -f "/etc/nginx/sites-enabled/$old_domain" "/etc/nginx/sites-enabled/$old_reality_domain" "/etc/nginx/sites-enabled/default"
+ln -sf "/etc/nginx/sites-available/${new_domain}" "/etc/nginx/sites-enabled/${new_domain}"
+ln -sf "/etc/nginx/sites-available/${new_reality_domain}" "/etc/nginx/sites-enabled/${new_reality_domain}"
+ln -sf "/etc/nginx/sites-available/80.conf" "/etc/nginx/sites-enabled/80.conf"
 
 # Update SQLite Database stream_settings JSON blobs & settings
 XUIDB="/etc/x-ui/x-ui.db"
 if [[ -f "$XUIDB" ]]; then
     sqlite3 $XUIDB "UPDATE inbounds SET stream_settings = REPLACE(stream_settings, '$old_reality_domain', '$new_reality_domain');"
     sqlite3 $XUIDB "UPDATE inbounds SET stream_settings = REPLACE(stream_settings, '$old_domain', '$new_domain');"
+    sqlite3 $XUIDB "UPDATE inbounds SET settings = REPLACE(settings, '$old_reality_domain', '$new_reality_domain');" 2>/dev/null || true
+    sqlite3 $XUIDB "UPDATE inbounds SET settings = REPLACE(settings, '$old_domain', '$new_domain');" 2>/dev/null || true
+    sqlite3 $XUIDB "UPDATE settings SET value = REPLACE(value, '$old_reality_domain', '$new_reality_domain');" 2>/dev/null || true
+    sqlite3 $XUIDB "UPDATE settings SET value = REPLACE(value, '$old_domain', '$new_domain');" 2>/dev/null || true
     sqlite3 $XUIDB "UPDATE settings SET value = '/root/cert/${new_domain}/fullchain.pem' WHERE key = 'webCertFile';"
     sqlite3 $XUIDB "UPDATE settings SET value = '/root/cert/${new_domain}/privkey.pem' WHERE key = 'webKeyFile';"
-    sqlite3 $XUIDB "UPDATE settings SET value = '$new_domain' WHERE key IN ('webDomain', 'subDomain') AND value = '$old_domain';"
-    sqlite3 $XUIDB "UPDATE hosts SET address = REPLACE(address, '$old_domain', '$new_domain'), sni = REPLACE(sni, '$old_domain', '$new_domain'), host_header = REPLACE(host_header, '$old_domain', '$new_domain');" 2>/dev/null
+    sqlite3 $XUIDB "UPDATE hosts SET address = REPLACE(address, '$old_domain', '$new_domain'), sni = REPLACE(sni, '$old_domain', '$new_domain'), host_header = REPLACE(host_header, '$old_domain', '$new_domain');" 2>/dev/null || true
 fi
 
 if [[ -f "/usr/local/x-ui/x-ui" ]]; then
-    /usr/local/x-ui/x-ui cert -webCert "/root/cert/${new_domain}/fullchain.pem" -webCertKey "/root/cert/${new_domain}/privkey.pem" >/dev/null 2>&1
+    /usr/local/x-ui/x-ui cert -webCert "/root/cert/${new_domain}/fullchain.pem" -webCertKey "/root/cert/${new_domain}/privkey.pem" >/dev/null 2>&1 || true
 fi
 
 # Restart services
 if nginx -t 2>&1 | grep -q 'successful'; then
-    systemctl start nginx
+    systemctl restart nginx
 else
     echo -e "\e[1;41m Warning: Nginx test reported errors! Check /etc/nginx configs. \e[0m"
-    systemctl start nginx
+    nginx -t
+    systemctl restart nginx
 fi
 
 x-ui restart
