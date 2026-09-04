@@ -116,24 +116,30 @@ fi
 echo "Generating self-signed SSL certificate for $IP4..."
 mkdir -p "/etc/letsencrypt/live/${IP4}"
 mkdir -p "/root/cert/${IP4}"
+mkdir -p /etc/ssl/certs /etc/ssl/private
 
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-    -keyout "/etc/letsencrypt/live/${IP4}/privkey.pem" \
-    -out "/etc/letsencrypt/live/${IP4}/fullchain.pem" \
+    -keyout "/etc/ssl/private/xui-${IP4}.key" \
+    -out "/etc/ssl/certs/xui-${IP4}.crt" \
     -subj "/CN=${IP4}" \
     -addext "subjectAltName=IP:${IP4}" >/dev/null 2>&1 || \
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-    -keyout "/etc/letsencrypt/live/${IP4}/privkey.pem" \
-    -out "/etc/letsencrypt/live/${IP4}/fullchain.pem" \
+    -keyout "/etc/ssl/private/xui-${IP4}.key" \
+    -out "/etc/ssl/certs/xui-${IP4}.crt" \
     -subj "/CN=${IP4}" >/dev/null 2>&1
 
-chmod 755 /root/cert/* 2>/dev/null || true
-ln -sf "/etc/letsencrypt/live/${IP4}/fullchain.pem" "/root/cert/${IP4}/fullchain.pem"
-ln -sf "/etc/letsencrypt/live/${IP4}/privkey.pem" "/root/cert/${IP4}/privkey.pem"
+chmod 755 /root 2>/dev/null || true
+chmod -R 755 /root/cert 2>/dev/null || true
+chmod 644 "/etc/ssl/certs/xui-${IP4}.crt"
+chmod 644 "/etc/ssl/private/xui-${IP4}.key"
+ln -sf "/etc/ssl/certs/xui-${IP4}.crt" "/root/cert/${IP4}/fullchain.pem"
+ln -sf "/etc/ssl/private/xui-${IP4}.key" "/root/cert/${IP4}/privkey.pem"
+ln -sf "/etc/ssl/certs/xui-${IP4}.crt" "/etc/letsencrypt/live/${IP4}/fullchain.pem"
+ln -sf "/etc/ssl/private/xui-${IP4}.key" "/etc/letsencrypt/live/${IP4}/privkey.pem"
 
 # Configure Nginx Stream multiplexer (port 443)
 # Direct IP connections have empty SNI -> route to www (port 7443)
-# Reality connections have SNI matching reality_sni (or default) -> route to xray (port 8443)
+# Reality connections have SNI matching reality_sni -> route to xray (port 8443)
 echo "Configuring Nginx Stream module for IP and Reality SNI routing..."
 mkdir -p /etc/nginx/stream-enabled
 cat > "$STREAM_CONF" << EOF
@@ -153,7 +159,6 @@ upstream www {
 
 server {
     proxy_protocol on;
-    set_real_ip_from unix:;
     listen          443;
     listen         [::]:443;
     proxy_pass      \$sni_name;
@@ -173,8 +178,8 @@ server {
     root /var/www/html/;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!eNULL:!MD5:!DES:!RC4:!ADH:!SSLv3:!EXP:!PSK:!DSS;
-    ssl_certificate /root/cert/${IP4}/fullchain.pem;
-    ssl_certificate_key /root/cert/${IP4}/privkey.pem;
+    ssl_certificate /etc/ssl/certs/xui-${IP4}.crt;
+    ssl_certificate_key /etc/ssl/private/xui-${IP4}.key;
 
     if (\$request_uri ~ "(\"|'|\`|~|,|:|;|%|\\$|&&|\?\?|0x00|0X00|\||\\|\{|\}|\[|\]|<|>|\.\.\.|\.\.\/|\/\/\/)"){set \$hack 1;}
     error_page 400 401 402 403 500 501 502 503 504 =404 /404;
@@ -195,11 +200,13 @@ cat >> "/etc/nginx/sites-available/${IP4}" << EOF
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
+        proxy_ssl_verify off;
+        proxy_ssl_server_name on;
 
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
-        proxy_pass http://127.0.0.1:${panel_port};
+        proxy_pass https://127.0.0.1:${panel_port};
         break;
     }
 
@@ -213,11 +220,13 @@ cat >> "/etc/nginx/sites-available/${IP4}" << EOF
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
+        proxy_ssl_verify off;
+        proxy_ssl_server_name on;
 
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
-        proxy_pass http://127.0.0.1:${panel_port};
+        proxy_pass https://127.0.0.1:${panel_port};
         break;
     }
 EOF
@@ -238,8 +247,8 @@ server {
     index index.html index.htm;
     root /var/www/html/;
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_certificate /root/cert/${IP4}/fullchain.pem;
-    ssl_certificate_key /root/cert/${IP4}/privkey.pem;
+    ssl_certificate /etc/ssl/certs/xui-${IP4}.crt;
+    ssl_certificate_key /etc/ssl/private/xui-${IP4}.key;
     error_page 400 401 402 403 500 501 502 503 504 =404 /404;
     location / { try_files \$uri \$uri/ =404; }
 }
@@ -336,15 +345,17 @@ if [[ -f "$XUIDB" ]]; then
     # Update Reality target to real external server for genuine probe responses
     sqlite3 "$XUIDB" "UPDATE inbounds SET stream_settings = REPLACE(stream_settings, '127.0.0.1:9443', '${reality_target}') WHERE protocol='vless' AND stream_settings LIKE '%reality%';" 2>/dev/null || true
 
-    # 3X-UI backend panel runs in plain HTTP on 127.0.0.1 (Nginx handles SSL on frontend 443/7443)
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key IN ('webCertFile', 'webKeyFile', 'webDomain', 'subDomain', 'webListen');" 2>/dev/null || true
+    # Configure 3X-UI with self-signed SSL from /etc/ssl
+    sqlite3 "$XUIDB" "UPDATE settings SET value = '/etc/ssl/certs/xui-${IP4}.crt' WHERE key = 'webCertFile';" 2>/dev/null || true
+    sqlite3 "$XUIDB" "UPDATE settings SET value = '/etc/ssl/private/xui-${IP4}.key' WHERE key = 'webKeyFile';" 2>/dev/null || true
+    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key IN ('webDomain', 'subDomain', 'webListen');" 2>/dev/null || true
     sqlite3 "$XUIDB" "UPDATE settings SET value = 'https://${IP4}/${sub_path}/' WHERE key = 'subURI';" 2>/dev/null || true
     sqlite3 "$XUIDB" "UPDATE settings SET value = 'https://${IP4}/${web_path}?name=' WHERE key = 'subJsonURI';" 2>/dev/null || true
 fi
 
-# Reset 3X-UI internal certificate references so it does not reject local Nginx reverse proxy
+# Apply certificate to 3X-UI via CLI so direct HTTPS access on panel_port also works
 if [[ -f "/usr/local/x-ui/x-ui" ]]; then
-    /usr/local/x-ui/x-ui cert -webCert "" -webCertKey "" >/dev/null 2>&1 || true
+    /usr/local/x-ui/x-ui cert -webCert "/etc/ssl/certs/xui-${IP4}.crt" -webCertKey "/etc/ssl/private/xui-${IP4}.key" >/dev/null 2>&1 || true
     /usr/local/x-ui/x-ui setting -webListen "" >/dev/null 2>&1 || true
 fi
 
@@ -370,7 +381,8 @@ echo ""
 echo -e "\e[1;42m Successfully switched to IP mode! \e[0m"
 echo -e "\e[1;34m Server IPv4:             $IP4 \e[0m"
 echo -e "\e[1;34m Reality Camouflage SNI:  $reality_sni \e[0m"
-echo -e "\e[1;34m Panel URL (HTTPS):       https://${IP4}/${panel_path}/ \e[0m"
+echo -e "\e[1;34m Panel URL (Standard 443): https://${IP4}/${panel_path}/ \e[0m"
+echo -e "\e[1;34m Panel URL (Direct Port):  https://${IP4}:${panel_port}/${panel_path}/ \e[0m"
 echo -e "   \e[33m(Browser will warn about self-signed SSL; click 'Advanced' -> 'Proceed to $IP4')\e[0m"
 echo -e "\e[1;34m Subscription (HTTPS):    https://${IP4}/${sub_path}/ \e[0m"
 echo -e "\e[1;34m Subscription (HTTP):     http://${IP4}/${sub_path}/ \e[0m"
