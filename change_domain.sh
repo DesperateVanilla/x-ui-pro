@@ -76,6 +76,10 @@ echo "Old Reality Domain: $old_reality_domain -> New Reality Domain: $new_realit
 
 # Generate new SSL certs
 systemctl stop nginx
+fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null || true
+killall -9 nginx 2>/dev/null || true
+command -v ufw >/dev/null 2>&1 && ufw allow 80/tcp >/dev/null 2>&1 || true
+command -v ufw >/dev/null 2>&1 && ufw allow 443/tcp >/dev/null 2>&1 || true
 certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
 if [[ ! -d "/etc/letsencrypt/live/${new_domain}/" ]]; then
  	systemctl start nginx >/dev/null 2>&1
