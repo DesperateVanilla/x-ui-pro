@@ -78,18 +78,31 @@ echo "Old Reality Domain: $old_reality_domain -> New Reality Domain: $new_realit
 systemctl stop nginx
 fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null || true
 killall -9 nginx 2>/dev/null || true
-command -v ufw >/dev/null 2>&1 && ufw allow 80/tcp >/dev/null 2>&1 || true
-command -v ufw >/dev/null 2>&1 && ufw allow 443/tcp >/dev/null 2>&1 || true
+
+ufw_was_active=false
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+    ufw_was_active=true
+    ufw disable >/dev/null 2>&1
+fi
+
 certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$new_domain"
 if [[ ! -d "/etc/letsencrypt/live/${new_domain}/" ]]; then
+    [[ "$ufw_was_active" == true ]] && ufw --force enable >/dev/null 2>&1
  	systemctl start nginx >/dev/null 2>&1
 	echo -e "\e[1;41m $new_domain SSL could not be generated! Check Domain/IP Or Enter new domain! \e[0m" && exit 1
 fi
 
 certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$new_reality_domain"
 if [[ ! -d "/etc/letsencrypt/live/${new_reality_domain}/" ]]; then
+    [[ "$ufw_was_active" == true ]] && ufw --force enable >/dev/null 2>&1
  	systemctl start nginx >/dev/null 2>&1
 	echo -e "\e[1;41m $new_reality_domain SSL could not be generated! Check Domain/IP Or Enter new domain! \e[0m" && exit 1
+fi
+
+if [[ "$ufw_was_active" == true ]]; then
+    ufw allow 80/tcp >/dev/null 2>&1
+    ufw allow 443/tcp >/dev/null 2>&1
+    ufw --force enable >/dev/null 2>&1
 fi
 
 mkdir -p /root/cert/${new_domain}
