@@ -112,30 +112,61 @@ if [[ -z "$sub_port" ]]; then
     sub_port=$(grep -m1 -oP 'proxy_pass http://127.0.0.1:\K\d+' /etc/nginx/snippets/includes.conf 2>/dev/null | head -n 1)
 fi
 
-# Generate self-signed IP SSL certificate with IP SAN
-echo "Generating self-signed SSL certificate for $IP4..."
+# Obtain or generate IP SSL certificate
 mkdir -p "/etc/letsencrypt/live/${IP4}"
 mkdir -p "/root/cert/${IP4}"
+mkdir -p "/root/cert/ip"
 mkdir -p /etc/ssl/certs /etc/ssl/private
 
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-    -keyout "/etc/ssl/private/xui-${IP4}.key" \
-    -out "/etc/ssl/certs/xui-${IP4}.crt" \
-    -subj "/CN=${IP4}" \
-    -addext "subjectAltName=IP:${IP4}" >/dev/null 2>&1 || \
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-    -keyout "/etc/ssl/private/xui-${IP4}.key" \
-    -out "/etc/ssl/certs/xui-${IP4}.crt" \
-    -subj "/CN=${IP4}" >/dev/null 2>&1
+got_valid_cert=false
+if [[ -x "$HOME/.acme.sh/acme.sh" || -x "/root/.acme.sh/acme.sh" ]]; then
+    ACME_BIN="$HOME/.acme.sh/acme.sh"
+    [[ ! -x "$ACME_BIN" ]] && ACME_BIN="/root/.acme.sh/acme.sh"
+    echo "Attempting to issue Let's Encrypt shortlived certificate for IP ${IP4}..."
+    systemctl stop nginx 2>/dev/null || true
+    fuser -k 80/tcp 2>/dev/null || true
+    $ACME_BIN --set-default-ca --server letsencrypt --force >/dev/null 2>&1 || true
+    if $ACME_BIN --issue -d "${IP4}" --standalone --server letsencrypt --certificate-profile shortlived --days 6 --httpport 80 --force >/dev/null 2>&1; then
+        $ACME_BIN --installcert --force -d "${IP4}" \
+            --key-file "/root/cert/ip/privkey.pem" \
+            --fullchain-file "/root/cert/ip/fullchain.pem" \
+            --reloadcmd "systemctl reload nginx 2>/dev/null || true" >/dev/null 2>&1 || true
+        cp "/root/cert/ip/fullchain.pem" "/etc/ssl/certs/xui-${IP4}.crt" 2>/dev/null || true
+        cp "/root/cert/ip/privkey.pem" "/etc/ssl/private/xui-${IP4}.key" 2>/dev/null || true
+        sed -i "s|Le_PreHook=.*|Le_PreHook='systemctl stop nginx'|g" "/root/.acme.sh/${IP4}_ecc/${IP4}.conf" 2>/dev/null || true
+        sed -i "s|Le_PostHook=.*|Le_PostHook='systemctl start nginx'|g" "/root/.acme.sh/${IP4}_ecc/${IP4}.conf" 2>/dev/null || true
+        got_valid_cert=true
+        echo "Let's Encrypt SSL certificate for IP successfully issued!"
+    fi
+fi
+
+if [[ "$got_valid_cert" != "true" && ( ! -f "/etc/ssl/certs/xui-${IP4}.crt" || ! -f "/etc/ssl/private/xui-${IP4}.key" ) ]]; then
+    echo "Generating self-signed SSL certificate for $IP4..."
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout "/etc/ssl/private/xui-${IP4}.key" \
+        -out "/etc/ssl/certs/xui-${IP4}.crt" \
+        -subj "/CN=${IP4}" \
+        -addext "subjectAltName=IP:${IP4}" >/dev/null 2>&1 || \
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout "/etc/ssl/private/xui-${IP4}.key" \
+        -out "/etc/ssl/certs/xui-${IP4}.crt" \
+        -subj "/CN=${IP4}" >/dev/null 2>&1
+fi
 
 chmod 755 /root 2>/dev/null || true
 chmod -R 755 /root/cert 2>/dev/null || true
-chmod 644 "/etc/ssl/certs/xui-${IP4}.crt"
-chmod 644 "/etc/ssl/private/xui-${IP4}.key"
-ln -sf "/etc/ssl/certs/xui-${IP4}.crt" "/root/cert/${IP4}/fullchain.pem"
-ln -sf "/etc/ssl/private/xui-${IP4}.key" "/root/cert/${IP4}/privkey.pem"
-ln -sf "/etc/ssl/certs/xui-${IP4}.crt" "/etc/letsencrypt/live/${IP4}/fullchain.pem"
-ln -sf "/etc/ssl/private/xui-${IP4}.key" "/etc/letsencrypt/live/${IP4}/privkey.pem"
+chmod 644 "/etc/ssl/certs/xui-${IP4}.crt" 2>/dev/null || true
+chmod 600 "/etc/ssl/private/xui-${IP4}.key" 2>/dev/null || true
+ln -sf "/etc/ssl/certs/xui-${IP4}.crt" "/root/cert/${IP4}/fullchain.pem" 2>/dev/null || true
+ln -sf "/etc/ssl/private/xui-${IP4}.key" "/root/cert/${IP4}/privkey.pem" 2>/dev/null || true
+ln -sf "/etc/ssl/certs/xui-${IP4}.crt" "/etc/letsencrypt/live/${IP4}/fullchain.pem" 2>/dev/null || true
+ln -sf "/etc/ssl/private/xui-${IP4}.key" "/etc/letsencrypt/live/${IP4}/privkey.pem" 2>/dev/null || true
+
+# Ensure internal HTTP proxy in includes.conf
+if [[ -f "/etc/nginx/snippets/includes.conf" ]]; then
+    [[ -n "$sub_port" ]] && sed -i "s|proxy_pass https://127.0.0.1:${sub_port};|proxy_pass http://127.0.0.1:${sub_port};|g" /etc/nginx/snippets/includes.conf 2>/dev/null || true
+    sed -i "s|proxy_pass https://127.0.0.1:38921;|proxy_pass http://127.0.0.1:38921;|g" /etc/nginx/snippets/includes.conf 2>/dev/null || true
+fi
 
 # Configure Nginx Stream multiplexer (port 443)
 # Direct IP connections have empty SNI -> route to www (port 7443)
