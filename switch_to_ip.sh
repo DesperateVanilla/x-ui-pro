@@ -200,13 +200,11 @@ cat >> "/etc/nginx/sites-available/${IP4}" << EOF
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_ssl_verify off;
-        proxy_ssl_server_name on;
 
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
-        proxy_pass https://127.0.0.1:${panel_port};
+        proxy_pass http://127.0.0.1:${panel_port};
         break;
     }
 
@@ -220,13 +218,11 @@ cat >> "/etc/nginx/sites-available/${IP4}" << EOF
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_ssl_verify off;
-        proxy_ssl_server_name on;
 
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
-        proxy_pass https://127.0.0.1:${panel_port};
+        proxy_pass http://127.0.0.1:${panel_port};
         break;
     }
 EOF
@@ -342,20 +338,47 @@ if [[ -f "$XUIDB" ]]; then
         sqlite3 "$XUIDB" "UPDATE hosts SET address = REPLACE(address, '$old_domain', '$IP4'), sni = REPLACE(sni, '$old_domain', '$IP4'), host_header = REPLACE(host_header, '$old_domain', '$IP4');" 2>/dev/null || true
     fi
 
-    # Update Reality target to real external server for genuine probe responses
-    sqlite3 "$XUIDB" "UPDATE inbounds SET stream_settings = REPLACE(stream_settings, '127.0.0.1:9443', '${reality_target}') WHERE protocol='vless' AND stream_settings LIKE '%reality%';" 2>/dev/null || true
+    # In direct IP mode, subscriptions and internal panel MUST be plain HTTP:
+    # 1) Mobile clients (v2rayNG, Happ, Streisand, Karing) reject self-signed HTTPS on IP subscriptions.
+    # 2) Port 80 and port 38921 serve subscriptions over HTTP with zero SSL errors.
+    # 3) Nginx terminates HTTPS on port 7443 (for 443) and proxies to http://127.0.0.1:${panel_port}.
+    # 4) Admin panel is also accessible via direct HTTP on port ${panel_port} without certificate warnings.
+    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key IN ('webCertFile', 'webKeyFile', 'subCertFile', 'subKeyFile');" 2>/dev/null || true
+    sqlite3 "$XUIDB" "UPDATE settings SET value = 'http://${IP4}/${sub_path}/' WHERE key = 'subURI';" 2>/dev/null || true
+    sqlite3 "$XUIDB" "UPDATE settings SET value = 'http://${IP4}/${web_path}?name=' WHERE key = 'subJsonURI';" 2>/dev/null || true
+    sqlite3 "$XUIDB" "UPDATE settings SET value = 'http://${IP4}:${panel_port}/${panel_path}/' WHERE key = 'webDomain';" 2>/dev/null || true
 
-    # Configure 3X-UI with self-signed SSL from /etc/ssl
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '/etc/ssl/certs/xui-${IP4}.crt' WHERE key = 'webCertFile';" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '/etc/ssl/private/xui-${IP4}.key' WHERE key = 'webKeyFile';" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = '' WHERE key IN ('webDomain', 'subDomain', 'webListen');" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = 'https://${IP4}/${sub_path}/' WHERE key = 'subURI';" 2>/dev/null || true
-    sqlite3 "$XUIDB" "UPDATE settings SET value = 'https://${IP4}/${web_path}?name=' WHERE key = 'subJsonURI';" 2>/dev/null || true
+    # Sync Reality inbounds to ensure reality_sni is primary serverName and target
+    python3 -c "
+import sqlite3, json
+conn = sqlite3.connect('$XUIDB')
+c = conn.cursor()
+c.execute(\"SELECT id, stream_settings FROM inbounds WHERE protocol='vless';\")
+for inb_id, ss in c.fetchall():
+    if not ss: continue
+    data = json.loads(ss)
+    if data.get('security') == 'reality':
+        rs = data.get('realitySettings', {})
+        rs['target'] = '${reality_target}'
+        rs['serverNames'] = ['${reality_sni}']
+        if 'settings' in rs: rs['settings']['serverName'] = '${reality_sni}'
+        c.execute(\"UPDATE inbounds SET stream_settings=? WHERE id=?;\", (json.dumps(data), inb_id))
+conn.commit()
+conn.close()
+" 2>/dev/null || true
+fi
+
+# Ensure UFW allows panel and proxy ports
+if command -v ufw >/dev/null 2>&1; then
+    [[ -n "$panel_port" ]] && ufw allow ${panel_port}/tcp >/dev/null 2>&1 || true
+    [[ -n "$sub_port" ]] && ufw allow ${sub_port}/tcp >/dev/null 2>&1 || true
+    ufw allow 7443/tcp >/dev/null 2>&1 || true
+    ufw allow 9443/tcp >/dev/null 2>&1 || true
 fi
 
 # Apply certificate to 3X-UI via CLI so direct HTTPS access on panel_port also works
 if [[ -f "/usr/local/x-ui/x-ui" ]]; then
-    /usr/local/x-ui/x-ui cert -webCert "/etc/ssl/certs/xui-${IP4}.crt" -webCertKey "/etc/ssl/private/xui-${IP4}.key" >/dev/null 2>&1 || true
+    /usr/local/x-ui/x-ui cert -webCert "" -webCertKey "" >/dev/null 2>&1 || true
     /usr/local/x-ui/x-ui setting -webListen "" >/dev/null 2>&1 || true
 fi
 
@@ -381,11 +404,12 @@ echo ""
 echo -e "\e[1;42m Successfully switched to IP mode! \e[0m"
 echo -e "\e[1;34m Server IPv4:             $IP4 \e[0m"
 echo -e "\e[1;34m Reality Camouflage SNI:  $reality_sni \e[0m"
-echo -e "\e[1;34m Panel URL (Standard 443): https://${IP4}/${panel_path}/ \e[0m"
-echo -e "\e[1;34m Panel URL (Direct Port):  https://${IP4}:${panel_port}/${panel_path}/ \e[0m"
+echo -e "\e[1;34m Panel URL (HTTPS):       https://${IP4}/${panel_path}/ \e[0m"
 echo -e "   \e[33m(Browser will warn about self-signed SSL; click 'Advanced' -> 'Proceed to $IP4')\e[0m"
-echo -e "\e[1;34m Subscription (HTTPS):    https://${IP4}/${sub_path}/ \e[0m"
+echo -e "\e[1;34m Panel URL (HTTP direct): http://${IP4}:${panel_port}/${panel_path}/ \e[0m"
+echo -e "   \e[32m(Zero SSL warnings, opens instantly in any mobile/desktop browser)\e[0m"
 echo -e "\e[1;34m Subscription (HTTP):     http://${IP4}/${sub_path}/ \e[0m"
+echo -e "   \e[32m(Zero SSL errors for friends in v2rayNG, Happ, Streisand, Karing, Nekobox)\e[0m"
 if [[ -n "$web_path" ]]; then
 echo -e "\e[1;34m Web Sub Page:            http://${IP4}/${web_path}?name=first \e[0m"
 fi
