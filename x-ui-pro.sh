@@ -130,7 +130,7 @@ while true; do
 	echo -en "Enter available subdomain (sub.domain.tld): " && read domain 
 done
 
-domain=$(echo "$domain" 2>&1 | tr -d '[:space:]' )
+domain=$(echo "$domain" 2>&1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
 SubDomain=$(echo "$domain" 2>&1 | sed 's/^[^ ]* \|\..*//g')
 MainDomain=$(echo "$domain" 2>&1 | sed 's/.*\.\([^.]*\..*\)$/\1/')
 
@@ -145,13 +145,14 @@ while true; do
 	echo -en "Enter available subdomain for REALITY (sub.domain.tld): " && read reality_domain 
 done
 
-reality_domain=$(echo "$reality_domain" 2>&1 | tr -d '[:space:]' )
+reality_domain=$(echo "$reality_domain" 2>&1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
 RealitySubDomain=$(echo "$reality_domain" 2>&1 | sed 's/^[^ ]* \|\..*//g')
 RealityMainDomain=$(echo "$reality_domain" 2>&1 | sed 's/.*\.\([^.]*\..*\)$/\1/')
 
 if [[ "${RealitySubDomain}.${RealityMainDomain}" != "${reality_domain}" ]] ; then
 	RealityMainDomain=${reality_domain}
 fi
+
 
 
 while true; do	

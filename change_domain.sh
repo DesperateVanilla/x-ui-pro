@@ -27,13 +27,14 @@ done
 
 while [[ -z "$new_domain" ]]; do
     echo -en "Enter NEW available subdomain (sub.domain.tld): " && read new_domain
-    new_domain=$(echo "$new_domain" | tr -d '[:space:]')
 done
+new_domain=$(echo "$new_domain" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
 
 while [[ -z "$new_reality_domain" ]]; do
     echo -en "Enter NEW available subdomain for REALITY (sub.domain.tld): " && read new_reality_domain
-    new_reality_domain=$(echo "$new_reality_domain" | tr -d '[:space:]')
 done
+new_reality_domain=$(echo "$new_reality_domain" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+
 
 IP4=$(ip route get 8.8.8.8 2>&1 | grep -Po -- 'src \K\S*')
 IP4_REGEX="^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
