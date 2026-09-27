@@ -366,6 +366,16 @@ cat > "/etc/nginx/snippets/includes.conf" << EOF
 		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 		proxy_pass http://127.0.0.1:8080/;
 		}
+    # Built-in Clash subscription
+    location ^~ /nikki/ {
+        if (\$hack = 1) {return 404;}
+        proxy_redirect off;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_pass http://127.0.0.1:${sub_port};
+    }
     # Path to open clash.yaml and generate YAML
     location ~ ^/${web_path}/clashmeta/(.+)$ {
         default_type text/plain;
@@ -701,7 +711,9 @@ sqlite3 $XUIDB <<EOF
 	     INSERT INTO "settings" ("key", "value") VALUES ("subURI",  '${sub_uri}');
              INSERT INTO "settings" ("key", "value") VALUES ("subJsonPath",  '${json_path}');
 	     INSERT INTO "settings" ("key", "value") VALUES ("subJsonURI",  '${json_uri}');
-		 INSERT INTO "settings" ("key", "value") VALUES ("subClashEnable",  'false');
+		 INSERT INTO "settings" ("key", "value") VALUES ("subClashEnable",  'true');
+		 INSERT INTO "settings" ("key", "value") VALUES ("subClashPath",  '/nikki/');
+		 INSERT INTO "settings" ("key", "value") VALUES ("subClashURI",  'https://${domain}/nikki/');
 		 INSERT INTO "settings" ("key", "value") VALUES ("subEnableRouting",  'false');
              INSERT INTO "settings" ("key", "value") VALUES ("subEnable",  'true');
              INSERT INTO "settings" ("key", "value") VALUES ("webListen",  '');
@@ -778,8 +790,8 @@ sqlite3 $XUIDB <<EOF
       "$reality_domain"
     ],
     "privateKey": "${private_key}",
-    "minClient": "0.0.0",
-    "maxClient": "",
+    "minClientVer": "0.0.0",
+    "maxClientVer": "",
     "maxTimediff": 0,
     "shortIds": [
       "${shor[0]}",
@@ -1300,6 +1312,7 @@ if systemctl is-active --quiet x-ui; then clear
 	echo -e "Password:  ${config_password} \n" 
 	msg_inf "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
     msg_inf "Web Sub Page your first client: https://${domain}/${web_path}?name=first\n"
+    msg_inf "Clash subscription for first client: https://${domain}/nikki/first\n"
     msg_inf "Your local sub2sing-box instance: https://${domain}/$sub2singbox_path/\n"
   msg_inf "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
 	msg_inf "Please Save this Screen!!"	
