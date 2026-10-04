@@ -32,7 +32,7 @@ gen_random_string() {
 }
 check_free() {
 	local port=$1
-	nc -z 127.0.0.1 $port &>/dev/null
+	(: >"/dev/tcp/127.0.0.1/$port") &>/dev/null
 	return $?
 }
 
@@ -176,7 +176,7 @@ if [[ ${INSTALL} == *"y"* ]]; then
 
 	$Pak -y update
 
-	$Pak -y install curl wget jq bash sudo nginx-full certbot python3-certbot-nginx sqlite3 ufw
+	$Pak -y install curl wget jq bash sudo nginx-full certbot python3-certbot-nginx sqlite3 ufw cron
 
 	systemctl daemon-reload && systemctl enable --now nginx
 fi
@@ -242,8 +242,8 @@ fi
 mkdir -p /root/cert/${domain}
 chmod 755 /root/cert/*
 
-ln -s /etc/letsencrypt/live/${domain}/fullchain.pem /root/cert/${domain}/fullchain.pem
-ln -s /etc/letsencrypt/live/${domain}/privkey.pem /root/cert/${domain}/privkey.pem
+ln -sfn "/etc/letsencrypt/live/${domain}/fullchain.pem" "/root/cert/${domain}/fullchain.pem"
+ln -sfn "/etc/letsencrypt/live/${domain}/privkey.pem" "/root/cert/${domain}/privkey.pem"
 
 mkdir -p /etc/nginx/stream-enabled
 cat > "/etc/nginx/stream-enabled/stream.conf" << EOF
@@ -264,7 +264,6 @@ upstream www {
 
 server {
     proxy_protocol on;
-    set_real_ip_from unix:;
     listen          443;
 	listen         [::]:443;
     proxy_pass      \$sni_name;
@@ -543,7 +542,7 @@ fi
 
 ##############################generate uri's###########################################################
 sub_uri=https://${domain}/${sub_path}/
-json_uri=https://${domain}/${web_path}?name=
+json_uri=https://${domain}/${json_path}/
 ##############################generate keys###########################################################
 shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8))
 
@@ -624,31 +623,26 @@ if [[ -f $XUIDB ]]; then
         client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
         
         awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
-        client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}')
-        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}')
-        if [[ -z "$client_pub" ]]; then
-            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}')
-        fi
-        
-        awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
-        server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        server_priv=$(echo "$awg_output" | grep -i "Private" | awk '{print $NF}' | tr -d '[:space:]' | tr '_-' '/+')
+        [[ ${#server_priv} -eq 43 ]] && server_priv="${server_priv}="
+        server_pub=$(echo "$awg_output" | grep -i "Public" | awk '{print $NF}' | tr -d '[:space:]' | tr '_-' '/+')
         if [[ -z "$server_pub" ]]; then
-            server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+            server_pub=$(echo "$awg_output" | grep -i "Password" | awk '{print $NF}' | tr -d '[:space:]' | tr '_-' '/+')
         fi
-        if [[ ${#server_priv} -ne 44 ]]; then
+        [[ ${#server_pub} -eq 43 ]] && server_pub="${server_pub}="
+        if [[ ${#server_priv} -ne 44 || ${#server_pub} -ne 44 ]]; then
             server_priv=""
             server_pub=""
         fi
         client_awg_output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
-        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
-        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+        client_priv=$(echo "$client_awg_output" | grep -i "Private" | awk '{print $NF}' | tr -d '[:space:]' | tr '_-' '/+')
+        [[ ${#client_priv} -eq 43 ]] && client_priv="${client_priv}="
+        client_pub=$(echo "$client_awg_output" | grep -i "Public" | awk '{print $NF}' | tr -d '[:space:]' | tr '_-' '/+')
         if [[ -z "$client_pub" ]]; then
-            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}' | tr -cd 'A-Za-z0-9+/=')
+            client_pub=$(echo "$client_awg_output" | grep -i "Password" | awk '{print $NF}' | tr -d '[:space:]' | tr '_-' '/+')
         fi
-        if [[ ${#client_priv} -ne 44 ]]; then
+        [[ ${#client_pub} -eq 43 ]] && client_pub="${client_pub}="
+        if [[ ${#client_priv} -ne 44 || ${#client_pub} -ne 44 ]]; then
             client_priv=""
             client_pub=""
         fi
@@ -716,7 +710,8 @@ sqlite3 $XUIDB <<EOF
 		 INSERT INTO "settings" ("key", "value") VALUES ("subClashURI",  'https://${domain}/nikki/');
 		 INSERT INTO "settings" ("key", "value") VALUES ("subEnableRouting",  'false');
              INSERT INTO "settings" ("key", "value") VALUES ("subEnable",  'true');
-             INSERT INTO "settings" ("key", "value") VALUES ("webListen",  '');
+             INSERT INTO "settings" ("key", "value") VALUES ("subJsonEnable",  'true');
+             INSERT INTO "settings" ("key", "value") VALUES ("webListen",  '127.0.0.1');
 	     INSERT INTO "settings" ("key", "value") VALUES ("webDomain",  '');
              INSERT INTO "settings" ("key", "value") VALUES ("webCertFile",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("webKeyFile",  '');
@@ -749,7 +744,7 @@ sqlite3 $XUIDB <<EOF
              INSERT INTO "settings" ("key", "value") VALUES ("subJsonRules",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("datepicker",  'gregorian');
              INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('1','1','first','0','0','0','0','0');
-             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at", "wg_private_key", "wg_public_key", "wg_allowed_ips") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000, '${client_priv}', '${client_pub}', '10.8.1.2/32');
+             INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at", "wg_private_key", "wg_public_key", "wg_allowed_ips", "wg_keep_alive") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000, '${client_priv}', '${client_pub}', '10.8.1.2/32', 25);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 3, '', 1756726925000);
@@ -769,6 +764,7 @@ sqlite3 $XUIDB <<EOF
              '{
   "clients": [],
   "decryption": "none",
+  "encryption": "none",
   "fallbacks": []
 }',
 	     '{
@@ -843,6 +839,7 @@ sqlite3 $XUIDB <<EOF
              '{
   "clients": [],
   "decryption": "none",
+  "encryption": "none",
   "fallbacks": []
 }','{
   "network": "ws",
@@ -931,6 +928,7 @@ sqlite3 $XUIDB <<EOF
 		 'hysteria',
 		 '{
   "clients": [],
+  "version": 2,
   "ignoreClientBandwidth": false
 }',
 '{
@@ -1016,7 +1014,19 @@ sqlite3 $XUIDB <<EOF
     "randomTrailers": true,
     "disableCookies": true
   },
-  "clients": []
+  "clients": [
+    {
+      "privateKey": "${client_priv}",
+      "publicKey": "${client_pub}",
+      "allowedIPs": [
+        "10.8.1.2/32"
+      ],
+      "email": "first",
+      "subId": "first",
+      "enable": true,
+      "keepAlive": 25
+    }
+  ]
 }',
 '{
   "network": "amneziawg",
@@ -1037,7 +1047,6 @@ sqlite3 $XUIDB <<EOF
 	);
 EOF
 /usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${panel_port}" -webBasePath "${panel_path}"
-/usr/local/x-ui/x-ui cert -webCert "/root/cert/${domain}/fullchain.pem" -webCertKey "/root/cert/${domain}/privkey.pem"
 x-ui start
 else
 	msg_err "x-ui.db file not exist! Maybe x-ui isn't installed." && exit 1;
@@ -1275,7 +1284,7 @@ sed -i "s|sub.legiz.ru|$domain/$sub2singbox_path|g" "$DEST_FILE_SUB_PAGE"
 #sed -i -e "s|https://t.me/gozargah_marzban|$tg_escaped_link|g" -e "s|https://github.com/Gozargah/Marzban#donation|$tg_escaped_link|g" "$DEST_FILE_SUB_PAGE"
 
 ######################cronjob for ssl/reload service/cloudflareips######################################
-crontab -l | grep -v "certbot\|x-ui\|cloudflareips\|sub2sing-box" | crontab -
+crontab -l 2>/dev/null | grep -v "certbot\|x-ui\|cloudflareips\|sub2sing-box" | crontab -
 (crontab -l 2>/dev/null; echo '@reboot /usr/bin/sub2sing-box server --bind 127.0.0.1 --port 8080 > /dev/null 2>&1') | crontab -
 (crontab -l 2>/dev/null; echo '@daily x-ui restart > /dev/null 2>&1 && nginx -s reload;') | crontab -
 (crontab -l 2>/dev/null; echo '@monthly certbot renew --nginx --non-interactive --post-hook "nginx -s reload" > /dev/null 2>&1;') | crontab -
@@ -1287,6 +1296,7 @@ ufw allow 443/tcp
 ufw allow 443/udp
 ufw allow ${hy2_port}/udp
 ufw allow ${hy2_port}/tcp
+ufw allow ${awg_port}/udp
 ufw allow ${panel_port}/tcp
 ufw --force enable  
 ##################################Show Details##########################################################
