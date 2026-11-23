@@ -69,6 +69,25 @@ def provision(name: str) -> sqlite3.Connection:
 
 
 class TestProvisioning(unittest.TestCase):
+    def test_panel_stays_http_after_provisioning(self) -> None:
+        for name in ("x-ui-pro.sh", "x-ui-latest.sh"):
+            with self.subTest(script=name):
+                content = (ROOT / name).read_text(encoding="utf-8").split("UPDATE_XUIDB(){", 1)[1]
+                tail = re.search(r"\nEOF\n(.*?)\nx-ui start", content, re.DOTALL)
+                self.assertIsNotNone(tail)
+                runner = """
+tls_enabled=false
+xui() { [[ "$1" != cert ]] || tls_enabled=true; return 0; }
+msg_err() { echo "$1" >&2; }
+config_username=user config_password=password panel_port=2053 panel_path=secret domain=panel.example.com
+true
+""" + tail.group(1).replace("/usr/local/x-ui/x-ui", "xui") + '\nprintf "TLS=%s\\n" "$tls_enabled"\n'
+                result = subprocess.run(
+                    [find_bash()], input=runner, capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "TLS=false")
+
     def test_current_schema_and_protocols(self) -> None:
         for name in ("x-ui-pro.sh", "x-ui-latest.sh"):
             with self.subTest(script=name), provision(name) as conn:
