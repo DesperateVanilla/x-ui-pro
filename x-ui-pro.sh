@@ -100,6 +100,32 @@ if [[ ${UNINSTALL} == *"y"* ]]; then
 fi
 
 
+# Protocol recovery entry point.
+PROTOCOL_RECOVERY_HELPER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/add_protocol.sh"
+ensure_all_protocols() {
+    local helper="$PROTOCOL_RECOVERY_HELPER" downloaded="" status
+    if [[ ! -f "$helper" ]]; then
+        helper=$(mktemp) || return 1
+        downloaded="$helper"
+        if ! curl -fsSL --connect-timeout 10 --max-time 60 \
+            https://raw.githubusercontent.com/DesperateVanilla/x-ui-pro/master/add_protocol.sh -o "$helper"; then
+            rm -f "$helper"
+            msg_err "Could not download the protocol recovery script."
+            return 1
+        fi
+    fi
+    if bash "$helper" all; then status=0; else status=$?; fi
+    [[ -z "$downloaded" ]] || rm -f "$downloaded"
+    return "$status"
+}
+
+if [[ -f "$XUIDB" ]]; then
+    msg_inf "Existing panel detected. Creating missing protocols and keeping existing settings."
+    ensure_all_protocols
+    exit $?
+fi
+# End protocol recovery entry point.
+
 arch() {
     case "$(uname -m)" in
         x86_64 | x64 | amd64) echo 'amd64' ;;
@@ -1368,6 +1394,8 @@ ufw allow ${hy2_port}/tcp
 ufw allow ${awg_port}/udp
 ufw allow ${panel_port}/tcp
 ufw --force enable  
+ensure_all_protocols || exit 1
+
 ##################################Show Details##########################################################
 
 if systemctl is-active --quiet x-ui; then clear
