@@ -1,6 +1,6 @@
 #!/bin/bash
 #################### x-ui-pro v2.4.3 @ github.com/GFW4Fun ##############################################
-[[ $EUID -ne 0 ]] && echo "not root!" && sudo su -
+[[ $EUID -ne 0 ]] && echo "Error: Please run as root (sudo)" && exit 1
 ##############################INFO######################################################################
 msg_ok() { echo -e "\e[1;42m $1 \e[0m";}
 msg_err() { echo -e "\e[1;41m $1 \e[0m";}
@@ -11,13 +11,6 @@ msg_inf		 ' /\    |_| _|_   |   | \ \_/ '	; echo
 ##################################Variables#############################################################
 XUIDB="/etc/x-ui/x-ui.db";domain="";UNINSTALL="x";INSTALL="n";PNLNUM=1;CFALLOW="n";CLASH=0;CUSTOMWEBSUB=0
 Pak=$(type apt &>/dev/null && echo "apt" || echo "yum")
-systemctl stop x-ui 2>/dev/null || true
-rm -rf /etc/systemd/system/x-ui.service
-rm -rf /usr/local/x-ui
-rm -rf /etc/x-ui
-rm -rf /etc/nginx/sites-enabled/*
-rm -rf /etc/nginx/sites-available/*
-rm -rf /etc/nginx/stream-enabled/*
 
 
 ##################################generate ports and paths#############################################################
@@ -32,7 +25,7 @@ gen_random_string() {
 }
 check_free() {
 	local port=$1
-	nc -z 127.0.0.1 $port &>/dev/null
+	(: >"/dev/tcp/127.0.0.1/$port") &>/dev/null
 	return $?
 }
 
@@ -107,10 +100,120 @@ if [[ ${UNINSTALL} == *"y"* ]]; then
 fi
 
 
-# --- get public IPv4 early (for auto-domain mode)
-IP4_REGEX="^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
-IP4=$(ip route get 8.8.8.8 2>&1 | grep -Po -- 'src \K\S*')
-[[ $IP4 =~ $IP4_REGEX ]] || IP4=$(curl -s ipv4.icanhazip.com | tr -d '[:space:]')
+arch() {
+    case "$(uname -m)" in
+        x86_64 | x64 | amd64) echo 'amd64' ;;
+        i*86 | x86) echo '386' ;;
+        armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
+        armv7* | armv7 | arm) echo 'armv7' ;;
+        armv6* | armv6) echo 'armv6' ;;
+        armv5* | armv5) echo 'armv5' ;;
+        s390x) echo 's390x' ;;
+        *) echo "Unsupported CPU architecture!" >&2; return 1 ;;
+    esac
+}
+case "$(arch)" in
+    amd64 | arm64 | 386) sub2sing_arch=$(arch) ;;
+    armv6 | armv7) sub2sing_arch=armv6 ;;
+    *) msg_err "No sub2sing-box release for this CPU architecture."; exit 1 ;;
+esac
+
+# Install DNS tools before looking up public addresses or auto-domains.
+if [[ ${INSTALL} == *"y"* ]]; then
+    $Pak -y update &&
+        $Pak -y install curl ca-certificates dnsutils python3 || exit 1
+fi
+for dependency in curl dig python3; do
+    command -v "$dependency" >/dev/null 2>&1 || {
+        msg_err "$dependency is required. Run with -install yes."
+        exit 1
+    }
+done
+
+# DNS helpers
+validate_domains() {
+    python3 - "$@" <<'PY'
+import re
+import sys
+
+domains = sys.argv[1:]
+if len(domains) != 2 or domains[0] == domains[1]:
+    sys.exit("Panel and REALITY domains must be different.")
+for domain in domains:
+    labels = domain.split(".")
+    if len(domain) > 253 or len(labels) < 2 or not all(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels
+    ) or all(label.isdigit() for label in labels):
+        sys.exit("Invalid domain: " + domain + ". Use an ASCII/punycode hostname without a URL or path.")
+PY
+}
+
+discover_public_ips() {
+    IP4=$(curl -4fsS --connect-timeout 5 --max-time 10 https://api.ipify.org) ||
+        IP4=$(curl -4fsS --connect-timeout 5 --max-time 10 https://ipv4.icanhazip.com) || {
+            echo "Cannot determine the public IPv4 address. Check network access." >&2
+            return 1
+        }
+    if ! python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "$IP4" 2>/dev/null; then
+        echo "Invalid public IPv4 address: $IP4" >&2
+        return 1
+    fi
+    IP6=$(curl -6fsS --connect-timeout 5 --max-time 10 https://api6.ipify.org 2>/dev/null) || IP6=""
+    python3 -c 'import ipaddress, sys; ipaddress.IPv6Address(sys.argv[1])' "$IP6" 2>/dev/null || IP6=""
+}
+
+dns_records_match() {
+    python3 - "$IP4" "${IP6:-}" "$1" "$2" <<'PY'
+import ipaddress
+import sys
+
+ipv4, ipv6, a, aaaa = sys.argv[1:]
+expected4 = ipaddress.IPv4Address(ipv4)
+expected6 = ipaddress.IPv6Address(ipv6) if ipv6 else None
+records4 = [line.split()[4] for line in a.splitlines() if len(line.split()) >= 5 and line.split()[3] == "A"]
+records6 = [line.split()[4] for line in aaaa.splitlines() if len(line.split()) >= 5 and line.split()[3] == "AAAA"]
+try:
+    ready = "status: NOERROR," in a and "status: NOERROR," in aaaa and bool(records4)
+    ready = ready and all(ipaddress.IPv4Address(value) == expected4 for value in records4)
+    ready = ready and all(ipaddress.IPv6Address(value) == expected6 for value in records6)
+except ValueError:
+    ready = False
+sys.exit(0 if ready else 1)
+PY
+}
+
+wait_for_dns() {
+    validate_domains "$@" || return 1
+    local host resolver a aaaa ready
+    local -a resolver_args
+    echo "Waiting for DNS: A -> $IP4; AAAA -> ${IP6:-remove AAAA records}."
+    echo "Checking system DNS, 1.1.1.1 and 8.8.8.8 every 15 seconds. Ctrl+C to cancel."
+    echo "For Cloudflare, use DNS Only (grey cloud)."
+    while true; do
+        ready=true
+        for host in "$@"; do
+            for resolver in system 1.1.1.1 8.8.8.8; do
+                resolver_args=()
+                [[ "$resolver" == system ]] || resolver_args=("@$resolver")
+                if ! a=$(dig -r "${resolver_args[@]}" +time=2 +tries=1 +noall +answer +comments "$host" A 2>/dev/null) ||
+                   ! aaaa=$(dig -r "${resolver_args[@]}" +time=2 +tries=1 +noall +answer +comments "$host" AAAA 2>/dev/null) ||
+                   ! dns_records_match "$a" "$aaaa"; then
+                    echo "DNS pending: $host ($resolver). Check A/AAAA records and DNS propagation."
+                    ready=false
+                    break
+                fi
+            done
+        done
+        if [[ "$ready" == true ]]; then
+            echo "DNS ready for all domains."
+            return 0
+        fi
+        sleep 15 || return 1
+    done
+}
+# End DNS helpers
+
+discover_public_ips || exit 1
 
 
 if [[ ${AUTODOMAIN} == *"y"* ]]; then
@@ -127,10 +230,11 @@ while true; do
 	if [[ -n "$domain" ]]; then
 		break
 	fi
-	echo -en "Enter available subdomain (sub.domain.tld): " && read domain 
+	echo -en "Enter available subdomain (sub.domain.tld): " && read -r domain || exit 1
 done
 
 domain=$(echo "$domain" 2>&1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+domain=${domain%.}
 SubDomain=$(echo "$domain" 2>&1 | sed 's/^[^ ]* \|\..*//g')
 MainDomain=$(echo "$domain" 2>&1 | sed 's/.*\.\([^.]*\..*\)$/\1/')
 
@@ -142,10 +246,11 @@ while true; do
 	if [[ -n "$reality_domain" ]]; then
 		break
 	fi
-	echo -en "Enter available subdomain for REALITY (sub.domain.tld): " && read reality_domain 
+	echo -en "Enter available subdomain for REALITY (sub.domain.tld): " && read -r reality_domain || exit 1
 done
 
 reality_domain=$(echo "$reality_domain" 2>&1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+reality_domain=${reality_domain%.}
 RealitySubDomain=$(echo "$reality_domain" 2>&1 | sed 's/^[^ ]* \|\..*//g')
 RealityMainDomain=$(echo "$reality_domain" 2>&1 | sed 's/.*\.\([^.]*\..*\)$/\1/')
 
@@ -153,52 +258,25 @@ if [[ "${RealitySubDomain}.${RealityMainDomain}" != "${reality_domain}" ]] ; the
 	RealityMainDomain=${reality_domain}
 fi
 
-###############################Install Packages#########################################################
-command -v ufw >/dev/null 2>&1 && ufw disable
-if [[ ${INSTALL} == *"y"* ]]; then
-
-         version=$(grep -oP '(?<=VERSION_ID=")[0-9]+' /etc/os-release)
-
-         # Проверяем, является ли версия 20 или 22
-        if [[ "$version" == "20" || "$version" == "22" ]]; then
-              echo "Версия системы: Ubuntu $version"
-        fi
-
-	$Pak -y update
-
-	$Pak -y install curl wget jq bash sudo nginx-full certbot python3-certbot-nginx sqlite3 ufw
-
-	systemctl daemon-reload && systemctl enable --now nginx
-fi
-systemctl stop nginx 
-fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null
-##################################GET SERVER IPv4-6#####################################################
-IP4_REGEX="^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
-IP6_REGEX="([a-f0-9:]+:+)+[a-f0-9]+"
-IP4=$(ip route get 8.8.8.8 2>&1 | grep -Po -- 'src \K\S*')
-IP6=$(ip route get 2620:fe::fe 2>&1 | grep -Po -- 'src \K\S*')
-[[ $IP4 =~ $IP4_REGEX ]] || IP4=$(curl -s ipv4.icanhazip.com);
-[[ $IP6 =~ $IP6_REGEX ]] || IP6=$(curl -s ipv6.icanhazip.com);
 ##############################Install SSL###############################################################
 
-resolve_to_ip () {
-    local host="$1"
-    # get first A-record
-    local a
-    a=$(getent ahostsv4 "$host" 2>/dev/null | awk 'NR==1{print $1}')
-    [[ -n "$a" ]] && [[ "$a" == "$IP4" ]]
-}
+wait_for_dns "$domain" "$reality_domain" || exit 1
 
-if [[ ${AUTODOMAIN} == *"y"* ]]; then
-    if ! resolve_to_ip "$domain"; then
-        msg_err "Auto-domain $domain does not resolve to this server IP ($IP4). Fix DNS/service and retry."
-        exit 1
-    fi
-    if ! resolve_to_ip "$reality_domain"; then
-        msg_err "Auto-domain $reality_domain does not resolve to this server IP ($IP4). Fix DNS/service and retry."
-        exit 1
-    fi
+if [[ ${INSTALL} == *"y"* ]]; then
+    $Pak -y install wget jq bash sudo nginx-full certbot python3-certbot-nginx sqlite3 ufw cron || exit 1
 fi
+
+systemctl stop x-ui 2>/dev/null || true
+rm -rf /etc/systemd/system/x-ui.service
+rm -rf /usr/local/x-ui
+rm -rf /etc/x-ui
+rm -rf /etc/nginx/sites-enabled/*
+rm -rf /etc/nginx/sites-available/*
+rm -rf /etc/nginx/stream-enabled/*
+command -v ufw >/dev/null 2>&1 && ufw disable
+systemctl daemon-reload && systemctl enable nginx
+systemctl stop nginx
+fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null
 
 
 certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$domain"
@@ -232,8 +310,8 @@ fi
 mkdir -p /root/cert/${domain}
 chmod 755 /root/cert/*
 
-ln -s /etc/letsencrypt/live/${domain}/fullchain.pem /root/cert/${domain}/fullchain.pem
-ln -s /etc/letsencrypt/live/${domain}/privkey.pem /root/cert/${domain}/privkey.pem
+ln -sfn "/etc/letsencrypt/live/${domain}/fullchain.pem" "/root/cert/${domain}/fullchain.pem"
+ln -sfn "/etc/letsencrypt/live/${domain}/privkey.pem" "/root/cert/${domain}/privkey.pem"
 
 mkdir -p /etc/nginx/stream-enabled
 cat > "/etc/nginx/stream-enabled/stream.conf" << EOF
@@ -521,7 +599,7 @@ fi
 
 ##############################generate uri's###########################################################
 sub_uri=https://${domain}/${sub_path}/
-json_uri=https://${domain}/${web_path}?name=
+json_uri=https://${domain}/${json_path}/
 ##############################generate keys###########################################################
 shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8))
 
@@ -529,17 +607,23 @@ shor=($(openssl rand -hex 8) $(openssl rand -hex 8) $(openssl rand -hex 8) $(ope
 UPDATE_XUIDB(){
 if [[ -f $XUIDB ]]; then
         x-ui stop
-        output=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519)
+        local xray_binary="/usr/local/x-ui/bin/xray-linux-$(arch)"
+        output=$("$xray_binary" x25519) || exit 1
 
-        private_key=$(echo "$output" | grep "^PrivateKey:" | awk '{print $2}')
-        public_key=$(echo "$output" | grep "^Password" | awk '{print $3}')
+        private_key=$(echo "$output" | awk '/^PrivateKey:/ {print $NF}')
+        public_key=$(echo "$output" | awk '/^(PublicKey|Password)([ :(]|$)/ {print $NF}')
+        if [[ ${#private_key} -ne 43 || ${#public_key} -ne 43 ]]; then
+            msg_err "Xray returned invalid REALITY keys."
+            exit 1
+        fi
 
-        client_id=$(/usr/local/x-ui/bin/xray-linux-amd64 uuid)
+        client_id=$("$xray_binary" uuid) || exit 1
         ip_info=$(LC_ALL=en_US.UTF-8 curl -s https://ipwho.is/)
         emoji_flag=$(echo "$ip_info" | jq -r '.flag.emoji')
         country=$(echo "$ip_info" | jq -r '.country')
-        node_name="${emoji_flag} ${country}"
-       	sqlite3 $XUIDB <<EOF
+        node_name=$(printf '%s %s' "$emoji_flag" "$country" | sed "s/'/''/g")
+        sqlite3 -bail $XUIDB <<EOF
+             BEGIN;
              DELETE FROM "inbounds";
              DELETE FROM "clients";
              DELETE FROM "client_inbounds";
@@ -560,7 +644,8 @@ if [[ -f $XUIDB ]]; then
 		 INSERT INTO "settings" ("key", "value") VALUES ("subClashURI",  'https://${domain}/nikki/');
 		 INSERT INTO "settings" ("key", "value") VALUES ("subEnableRouting",  'false');
              INSERT INTO "settings" ("key", "value") VALUES ("subEnable",  'true');
-             INSERT INTO "settings" ("key", "value") VALUES ("webListen",  '');
+             INSERT INTO "settings" ("key", "value") VALUES ("subJsonEnable",  'true');
+             INSERT INTO "settings" ("key", "value") VALUES ("webListen",  '127.0.0.1');
 	     INSERT INTO "settings" ("key", "value") VALUES ("webDomain",  '');
              INSERT INTO "settings" ("key", "value") VALUES ("webCertFile",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("webKeyFile",  '');
@@ -593,10 +678,6 @@ if [[ -f $XUIDB ]]; then
              INSERT INTO "settings" ("key", "value") VALUES ("subJsonRules",  '');
 	     INSERT INTO "settings" ("key", "value") VALUES ("datepicker",  'gregorian');
              INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('1','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('2','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('3','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('4','1','first','0','0','0','0','0');
-	     INSERT INTO "client_traffics" ("inbound_id","enable","email","up","down","expiry_time","total","reset") VALUES ('5','1','first','0','0','0','0','0');
              INSERT INTO "clients" ("id", "email", "sub_id", "uuid", "password", "auth", "flow", "limit_ip", "total_gb", "expiry_time", "enable", "tg_id", "reset", "created_at", "updated_at") VALUES (1, 'first', 'first', '${client_id}', '${client_id}', '${client_id}', '', 0, 0, 0, 1, 0, 0, 1756726925000, 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 1, 'xtls-rprx-vision', 1756726925000);
              INSERT INTO "client_inbounds" ("client_id", "inbound_id", "flow_override", "created_at") VALUES (1, 2, '', 1756726925000);
@@ -617,6 +698,7 @@ if [[ -f $XUIDB ]]; then
              '{
   "clients": [],
   "decryption": "none",
+  "encryption": "none",
   "fallbacks": []
 }',
 	     '{
@@ -692,6 +774,7 @@ if [[ -f $XUIDB ]]; then
              '{
   "clients": [],
   "decryption": "none",
+  "encryption": "none",
   "fallbacks": []
 }','{
   "network": "ws",
@@ -782,6 +865,7 @@ if [[ -f $XUIDB ]]; then
 		 'hysteria',
 		 '{
   "clients": [],
+  "version": 2,
   "ignoreClientBandwidth": false
 }',
 '{
@@ -824,7 +908,7 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}','1'
+}'
 	     );
 	INSERT INTO "inbounds" ("user_id","up","down","total","remark","enable","expiry_time","listen","port","protocol","settings","stream_settings","tag","sniffing") VALUES ( 
 	     '1',
@@ -840,6 +924,7 @@ if [[ -f $XUIDB ]]; then
 		 '{
   "clients": [],
   "decryption": "none",
+  "encryption": "none",
   "fallbacks": []
 }',
 '{
@@ -879,32 +964,22 @@ if [[ -f $XUIDB ]]; then
   ],
   "metadataOnly": false,
   "routeOnly": false
-}','1'
+}'
 	);
+             COMMIT;
 EOF
-/usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${panel_port}" -webBasePath "${panel_path}"
+[[ $? -eq 0 ]] || { msg_err "Could not configure x-ui database."; exit 1; }
+/usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${panel_port}" -webBasePath "${panel_path}" || exit 1
 /usr/local/x-ui/x-ui cert -webCert "/root/cert/${domain}/fullchain.pem" -webCertKey "/root/cert/${domain}/privkey.pem"
 x-ui start
 else
 	msg_err "x-ui.db file not exist! Maybe x-ui isn't installed." && exit 1;
 fi
 }
-arch() {
-    case "$(uname -m)" in
-        x86_64 | x64 | amd64) echo 'amd64' ;;
-        i*86 | x86) echo '386' ;;
-        armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
-        armv7* | armv7 | arm) echo 'armv7' ;;
-        armv6* | armv6) echo 'armv6' ;;
-        armv5* | armv5) echo 'armv5' ;;
-        s390x) echo 's390x' ;;
-        *) echo -e "${green}Unsupported CPU architecture! ${plain}" && rm -f install.sh && exit 1 ;;
-    esac
-}
-
 config_after_install() {
-            /usr/local/x-ui/x-ui setting -username "asdfasdf" -password "asdfasdf" -port "2096" -webBasePath "asdfasdf"    
-            /usr/local/x-ui/x-ui migrate
+    /usr/local/x-ui/x-ui migrate || exit 1
+    /usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${panel_port}" -webBasePath "${panel_path}" || exit 1
+    sqlite3 -bail "$XUIDB" "DELETE FROM settings WHERE key='webListen'; INSERT INTO settings (key,value) VALUES ('webListen','127.0.0.1');" || exit 1
 }
 
 install_panel() {
@@ -946,7 +1021,7 @@ apt-get update && apt-get install -y -q wget curl tar tzdata
             exit 1
         fi
     fi
-    wget -O /usr/bin/x-ui-temp https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh
+    wget -O /usr/bin/x-ui-temp "https://raw.githubusercontent.com/MHSanaei/3x-ui/${tag_version}/x-ui.sh"
     if [[ $? -ne 0 ]]; then
         echo -e "${red}Failed to download x-ui.sh${plain}"
         exit 1
@@ -970,11 +1045,6 @@ apt-get update && apt-get install -y -q wget curl tar tzdata
     chmod +x x-ui
     chmod +x x-ui.sh
     
-    # Check the system's architecture and rename the file accordingly
-    if [[ $(arch) == "armv5" || $(arch) == "armv6" || $(arch) == "armv7" ]]; then
-        mv bin/xray-linux-$(arch) bin/xray-linux-arm
-        chmod +x bin/xray-linux-arm
-    fi
     chmod +x x-ui bin/xray-linux-$(arch)
     
     # Update x-ui cli and se set permission
@@ -983,7 +1053,7 @@ apt-get update && apt-get install -y -q wget curl tar tzdata
 	config_after_install
     
     if [[ $release == "alpine" ]]; then
-        wget --inet4-only -O /etc/init.d/x-ui https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.rc
+        wget --inet4-only -O /etc/init.d/x-ui "https://raw.githubusercontent.com/MHSanaei/3x-ui/${tag_version}/x-ui.rc"
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Failed to download x-ui.rc${plain}"
             exit 1
@@ -1058,11 +1128,11 @@ if [ -f "/usr/bin/sub2sing-box" ]; then
     echo "delete sub2sing-box..."
     rm -f /usr/bin/sub2sing-box
 fi
-wget -P /root/ https://github.com/legiz-ru/sub2sing-box/releases/download/v0.0.9/sub2sing-box_0.0.9_linux_amd64.tar.gz
-tar -xvzf /root/sub2sing-box_0.0.9_linux_amd64.tar.gz -C /root/ --strip-components=1 sub2sing-box_0.0.9_linux_amd64/sub2sing-box
+wget -O "/root/sub2sing-box_0.0.9_linux_${sub2sing_arch}.tar.gz" "https://github.com/legiz-ru/sub2sing-box/releases/download/v0.0.9/sub2sing-box_0.0.9_linux_${sub2sing_arch}.tar.gz" || exit 1
+tar -xvzf "/root/sub2sing-box_0.0.9_linux_${sub2sing_arch}.tar.gz" -C /root/ --strip-components=1 "sub2sing-box_0.0.9_linux_${sub2sing_arch}/sub2sing-box" || exit 1
 mv /root/sub2sing-box /usr/bin/
 chmod +x /usr/bin/sub2sing-box
-rm /root/sub2sing-box_0.0.9_linux_amd64.tar.gz
+rm "/root/sub2sing-box_0.0.9_linux_${sub2sing_arch}.tar.gz"
 su -c "/usr/bin/sub2sing-box server --bind 127.0.0.1 --port 8080 & disown" root
 
 ######################install_fake_site#################################################################

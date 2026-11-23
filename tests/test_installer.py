@@ -35,7 +35,7 @@ def find_bash() -> str:
 def extract_awg_block(script_path: pathlib.Path) -> str:
     content = script_path.read_text(encoding="utf-8")
     pattern = (
-        r"(awg_output=\$\(/usr/local/x-ui/bin/xray-linux-amd64 x25519\).*?)"
+        r'(awg_output=\$\("\$xray_binary" x25519\).*?)'
         r"(?=\n\s*(?:ip_info=|node_name=|echo -e \".*?Generating AmneziaWG))"
     )
     match = re.search(pattern, content, re.DOTALL)
@@ -86,7 +86,7 @@ fi
         stub_path.chmod(0o755)
 
         quoted_stub = shlex.quote(stub_path.as_posix())
-        modified_block = extracted_block.replace("/usr/local/x-ui/bin/xray-linux-amd64", quoted_stub)
+        modified_block = extracted_block.replace('"$xray_binary"', quoted_stub)
 
         runner_content = f"""{modified_block}
 

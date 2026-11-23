@@ -26,37 +26,107 @@ while [ "$#" -gt 0 ]; do
 done
 
 while [[ -z "$new_domain" ]]; do
-    echo -en "Enter NEW available subdomain (sub.domain.tld): " && read new_domain
+    echo -en "Enter NEW available subdomain (sub.domain.tld): " && read -r new_domain || exit 1
 done
 new_domain=$(echo "$new_domain" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+new_domain=${new_domain%.}
 
 while [[ -z "$new_reality_domain" ]]; do
-    echo -en "Enter NEW available subdomain for REALITY (sub.domain.tld): " && read new_reality_domain
+    echo -en "Enter NEW available subdomain for REALITY (sub.domain.tld): " && read -r new_reality_domain || exit 1
 done
 new_reality_domain=$(echo "$new_reality_domain" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+new_reality_domain=${new_reality_domain%.}
 
 
-IP4=$(ip route get 8.8.8.8 2>&1 | grep -Po -- 'src \K\S*')
-IP4_REGEX="^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
-[[ $IP4 =~ $IP4_REGEX ]] || IP4=$(curl -s ipv4.icanhazip.com | tr -d '[:space:]')
+for dependency in curl dig python3; do
+    command -v "$dependency" >/dev/null 2>&1 || {
+        echo "$dependency is required. Install curl, dnsutils and python3 first." >&2
+        exit 1
+    }
+done
 
-resolve_to_ip () {
-    local host="$1"
-    local a
-    a=$(getent ahostsv4 "$host" 2>/dev/null | awk 'NR==1{print $1}')
-    [[ -n "$a" ]] && [[ "$a" == "$IP4" ]]
+# DNS helpers
+validate_domains() {
+    python3 - "$@" <<'PY'
+import re
+import sys
+
+domains = sys.argv[1:]
+if len(domains) != 2 or domains[0] == domains[1]:
+    sys.exit("Panel and REALITY domains must be different.")
+for domain in domains:
+    labels = domain.split(".")
+    if len(domain) > 253 or len(labels) < 2 or not all(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels
+    ) or all(label.isdigit() for label in labels):
+        sys.exit("Invalid domain: " + domain + ". Use an ASCII/punycode hostname without a URL or path.")
+PY
 }
 
-echo "Checking DNS resolution for $new_domain..."
-if ! resolve_to_ip "$new_domain"; then
-    echo -e "\e[33mWarning: Domain $new_domain does not currently resolve to this server IP ($IP4).\e[0m"
-    echo "If you recently updated DNS records, please ensure propagation or Let's Encrypt verification may fail."
-fi
+discover_public_ips() {
+    IP4=$(curl -4fsS --connect-timeout 5 --max-time 10 https://api.ipify.org) ||
+        IP4=$(curl -4fsS --connect-timeout 5 --max-time 10 https://ipv4.icanhazip.com) || {
+            echo "Cannot determine the public IPv4 address. Check network access." >&2
+            return 1
+        }
+    if ! python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "$IP4" 2>/dev/null; then
+        echo "Invalid public IPv4 address: $IP4" >&2
+        return 1
+    fi
+    IP6=$(curl -6fsS --connect-timeout 5 --max-time 10 https://api6.ipify.org 2>/dev/null) || IP6=""
+    python3 -c 'import ipaddress, sys; ipaddress.IPv6Address(sys.argv[1])' "$IP6" 2>/dev/null || IP6=""
+}
 
-echo "Checking DNS resolution for $new_reality_domain..."
-if ! resolve_to_ip "$new_reality_domain"; then
-    echo -e "\e[33mWarning: Domain $new_reality_domain does not currently resolve to this server IP ($IP4).\e[0m"
-fi
+dns_records_match() {
+    python3 - "$IP4" "${IP6:-}" "$1" "$2" <<'PY'
+import ipaddress
+import sys
+
+ipv4, ipv6, a, aaaa = sys.argv[1:]
+expected4 = ipaddress.IPv4Address(ipv4)
+expected6 = ipaddress.IPv6Address(ipv6) if ipv6 else None
+records4 = [line.split()[4] for line in a.splitlines() if len(line.split()) >= 5 and line.split()[3] == "A"]
+records6 = [line.split()[4] for line in aaaa.splitlines() if len(line.split()) >= 5 and line.split()[3] == "AAAA"]
+try:
+    ready = "status: NOERROR," in a and "status: NOERROR," in aaaa and bool(records4)
+    ready = ready and all(ipaddress.IPv4Address(value) == expected4 for value in records4)
+    ready = ready and all(ipaddress.IPv6Address(value) == expected6 for value in records6)
+except ValueError:
+    ready = False
+sys.exit(0 if ready else 1)
+PY
+}
+
+wait_for_dns() {
+    validate_domains "$@" || return 1
+    local host resolver a aaaa ready
+    local -a resolver_args
+    echo "Waiting for DNS: A -> $IP4; AAAA -> ${IP6:-remove AAAA records}."
+    echo "Checking system DNS, 1.1.1.1 and 8.8.8.8 every 15 seconds. Ctrl+C to cancel."
+    echo "For Cloudflare, use DNS Only (grey cloud)."
+    while true; do
+        ready=true
+        for host in "$@"; do
+            for resolver in system 1.1.1.1 8.8.8.8; do
+                resolver_args=()
+                [[ "$resolver" == system ]] || resolver_args=("@$resolver")
+                if ! a=$(dig -r "${resolver_args[@]}" +time=2 +tries=1 +noall +answer +comments "$host" A 2>/dev/null) ||
+                   ! aaaa=$(dig -r "${resolver_args[@]}" +time=2 +tries=1 +noall +answer +comments "$host" AAAA 2>/dev/null) ||
+                   ! dns_records_match "$a" "$aaaa"; then
+                    echo "DNS pending: $host ($resolver). Check A/AAAA records and DNS propagation."
+                    ready=false
+                    break
+                fi
+            done
+        done
+        if [[ "$ready" == true ]]; then
+            echo "DNS ready for all domains."
+            return 0
+        fi
+        sleep 15 || return 1
+    done
+}
+# End DNS helpers
 
 STREAM_CONF="/etc/nginx/stream-enabled/stream.conf"
 if [[ ! -f "$STREAM_CONF" ]]; then
@@ -71,6 +141,9 @@ if [[ -z "$old_domain" || -z "$old_reality_domain" ]]; then
     echo -e "\e[1;41m Could not find old domains in Nginx config ($STREAM_CONF)! \e[0m"
     exit 1
 fi
+
+discover_public_ips || exit 1
+wait_for_dns "$new_domain" "$new_reality_domain" || exit 1
 
 export LC_ALL=C
 export LANG=C
@@ -207,13 +280,8 @@ if [[ -f "$XUIDB" ]]; then
     sqlite3 $XUIDB "UPDATE inbounds SET settings = REPLACE(settings, '$old_domain', '$new_domain');" 2>/dev/null || true
     sqlite3 $XUIDB "UPDATE settings SET value = REPLACE(value, '$old_reality_domain', '$new_reality_domain');" 2>/dev/null || true
     sqlite3 $XUIDB "UPDATE settings SET value = REPLACE(value, '$old_domain', '$new_domain');" 2>/dev/null || true
-    sqlite3 $XUIDB "UPDATE settings SET value = '/root/cert/${new_domain}/fullchain.pem' WHERE key = 'webCertFile';"
-    sqlite3 $XUIDB "UPDATE settings SET value = '/root/cert/${new_domain}/privkey.pem' WHERE key = 'webKeyFile';"
+    sqlite3 $XUIDB "UPDATE settings SET value = '' WHERE key IN ('webCertFile', 'webKeyFile');"
     sqlite3 $XUIDB "UPDATE hosts SET address = REPLACE(address, '$old_domain', '$new_domain'), sni = REPLACE(sni, '$old_domain', '$new_domain'), host_header = REPLACE(host_header, '$old_domain', '$new_domain');" 2>/dev/null || true
-fi
-
-if [[ -f "/usr/local/x-ui/x-ui" ]]; then
-    /usr/local/x-ui/x-ui cert -webCert "/root/cert/${new_domain}/fullchain.pem" -webCertKey "/root/cert/${new_domain}/privkey.pem" >/dev/null 2>&1 || true
 fi
 
 # Restart services

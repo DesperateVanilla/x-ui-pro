@@ -4,3 +4,9 @@ schema.txt
 *.db
 *.tar.gz
 x-ui/
+__pycache__/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.py[cod]
